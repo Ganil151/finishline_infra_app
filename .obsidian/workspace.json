@@ -204,6 +204,7 @@
   },
   "active": "19ac471caa0c1888",
   "lastOpenFiles": [
+    "terraform/environments/dev/version.tf",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/devops-bootstrap.sh",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/config.json",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/devops_tools.sh",
@@ -217,7 +218,6 @@
     "05-labs/play-ground/microservices/spms-project-2",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/variables.tf",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/subnets.tf",
-    "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/routing.tf",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/README.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/README.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/secrets/README.md",

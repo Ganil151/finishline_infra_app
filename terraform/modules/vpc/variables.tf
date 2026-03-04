@@ -8,9 +8,24 @@ variable "environment" {
   type        = string
 }
 
+variable "manage_by" {
+  description = "The entity responsible for managing the VPC"
+  type        = string
+}
+
 variable "vpc_cidr" {
   description = "The CIDR block for the VPC"
   type        = string
+}
+
+variable "enable_dns_hostnames" {
+  description = "Whether to enable DNS hostnames for the VPC"
+  type        = bool
+}
+
+variable "enable_dns_support" {
+  description = "Whether to enable DNS support for the VPC"
+  type        = bool
 }
 
 variable "public_subnets_cidrs" {
