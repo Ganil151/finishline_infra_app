@@ -203,6 +203,8 @@
   },
   "active": "19ac471caa0c1888",
   "lastOpenFiles": [
+    "terraform/environments/dev/finishline-key-pair.pem",
+    "terraform/environments/dev/tfplan",
     "terraform/environments/dev/version.tf",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/devops-bootstrap.sh",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/config.json",
@@ -215,8 +217,6 @@
     "01-beginner/99-supplemental-content/03-phase-3/01-ci-cd-foundations/reference/artifact-registry-governance-ref.md",
     "00-career-mastery/14-Interview-Questions/InvetFlow-Questions-3.md",
     "05-labs/play-ground/microservices/spms-project-2",
-    "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/variables.tf",
-    "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/subnets.tf",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/README.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/README.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/secrets/README.md",
