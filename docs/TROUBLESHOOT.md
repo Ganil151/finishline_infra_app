@@ -1,7 +1,7 @@
 # Finishline Infrastructure — Troubleshooting Guide
 
-**Version**: 1.0  
-**Last Updated**: 2026-03-05  
+**Version**: 1.1
+**Last Updated**: 2026-03-06
 **Owner**: Platform / Infrastructure Team
 
 ---
@@ -17,7 +17,8 @@
 7. [State Lock Errors](#7-state-lock-errors)
 8. [Random Suffix / Resource Replace Loop](#8-random-suffix--resource-replace-loop)
 9. [Security Group Errors](#9-security-group-errors)
-10. [General Tips](#10-general-tips)
+10. [EKS Cluster Errors](#10-eks-cluster-errors)
+11. [General Tips](#11-general-tips)
 
 ---
 
@@ -380,11 +381,129 @@ The security group module allows all outbound traffic by default. This is intent
 
 ---
 
-## 10. General Tips
+## 10. EKS Cluster Errors
+
+### Error: `InvalidParameterException: EKS Auto Mode is only supported for cluster version 1.29 or above`
+
+```
+Error: creating EKS Cluster (...): InvalidParameterException:
+EKS Auto Mode is only supported for cluster version 1.29 or above.
+```
+
+**Cause:** AWS provider ≥ 6.x may implicitly enable EKS Auto Mode. For clusters running Kubernetes < 1.29, Auto Mode is not supported.
+
+**Fix (option A — upgrade Kubernetes version, recommended):**
+
+In `terraform.tfvars`:
+
+```hcl
+cluster_version = "1.29"   # or "1.30", "1.31"
+```
+
+**Fix (option B — explicitly disable Auto Mode):**
+
+The EKS module already includes the following blocks to opt out of Auto Mode:
+
+```hcl
+compute_config {
+  enabled = false
+}
+
+storage_config {
+  block_storage {
+    enabled = false
+  }
+}
+
+kubernetes_network_config {
+  elastic_load_balancing {
+    enabled = false
+  }
+}
+```
+
+If you see this error again, verify these blocks are present in `terraform/modules/eks/main.tf` and that the AWS provider version is `~> 6.0` or above.
+
+---
+
+### Error: `ResourceNotFoundException: No cluster found for name: ...`
+
+**Cause:** Attempting to create node groups or add-ons before the cluster is available.
+
+**Fix:** The EKS module uses `depends_on = [aws_eks_cluster.eks]` on both node group resources, and add-ons depend on the node groups. However, if you applied modules selectively (e.g., `terraform apply -target=module.eks.aws_eks_node_group.ondemand-node` before the cluster exists), you may hit this. Always apply the full plan without `-target` for first-time cluster creation.
+
+---
+
+### Error: `InvalidParameterException: Addon ... is not supported on cluster version ...`
+
+**Cause:** The specified add-on version is not compatible with the Kubernetes cluster version.
+
+**Fix:** Look up valid add-on versions for your cluster version:
+
+```bash
+aws eks describe-addon-versions \
+  --addon-name coredns \
+  --kubernetes-version 1.29 \
+  --query "addons[].addonVersions[].addonVersion" \
+  --output table
+```
+
+Then update `addons` in `terraform.tfvars` with a compatible version.
+
+---
+
+### Error: `Error: Kubernetes cluster unreachable` (during post-create operations)
+
+**Cause:** After EKS cluster creation, downstream Kubernetes provider configuration (if used) cannot reach the private API endpoint because the caller's network is not within the VPC.
+
+**Fix:** The cluster uses `endpoint_private_access = true` and `endpoint_public_access = false`. To interact with the cluster from outside the VPC, either:
+
+1. Enable public access temporarily: `endpoint_public_access = true`, then revert after initial setup.
+2. Use a bastion host or AWS Systems Manager Session Manager (SSM) within the VPC.
+3. Use a VPN or Direct Connect to the VPC.
+
+---
+
+### Symptom: Node groups show `DEGRADED` or nodes not joining the cluster
+
+**Cause (A):** The node group IAM role is missing required policies.
+**Fix:** Verify the node group role has these policies attached (managed by `module.iam`):
+
+- `AmazonEKSWorkerNodePolicy`
+- `AmazonEKS_CNI_Policy`
+- `AmazonEC2ContainerRegistryReadOnly`
+- `AmazonEBSCSIDriverPolicy`
+
+**Cause (B):** The `aws-auth` ConfigMap does not include the node group role.
+**Fix:** EKS should auto-register managed node group roles. If not:
+
+```bash
+kubectl describe configmap aws-auth -n kube-system
+```
+
+Ensure the nodegroup role ARN appears under `mapRoles`.
+
+---
+
+### Retrieve kubeconfig
+
+```bash
+aws eks update-kubeconfig \
+  --name finishline-eks-cluster \
+  --region us-east-1
+
+kubectl get nodes -o wide
+kubectl get pods -A
+```
+
+---
+
+## 11. General Tips
 
 | Tip                                                | Command                                            |
 | -------------------------------------------------- | -------------------------------------------------- |
 | Validate configuration syntax                      | `terraform validate`                               |
+| Format all Terraform files                         | `terraform fmt -recursive`                         |
 | Preview changes without applying                   | `terraform plan -out=tfplan`                       |
 | Refresh only — sync state without changes          | `terraform refresh`                                |
 | Target a single resource                           | `terraform apply -target=module.<name>.<resource>` |
@@ -392,6 +511,8 @@ The security group module allows all outbound traffic by default. This is intent
 | List all managed resources                         | `terraform state list`                             |
 | Remove a resource from state without destroying it | `terraform state rm <resource>`                    |
 | Enable verbose logging                             | `export TF_LOG=DEBUG`                              |
+| Check EKS cluster status                           | `aws eks describe-cluster --name <cluster-name>`   |
+| List EKS node groups                               | `aws eks list-nodegroups --cluster-name <name>`    |
 
 ---
 

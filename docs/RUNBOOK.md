@@ -1,33 +1,72 @@
 # Finishline Infrastructure — Runbook
 
-**Version**: 1.0  
-**Last Updated**: 2026-03-05  
+**Version**: 1.1
+**Last Updated**: 2026-03-06
 **Owner**: Platform / Infrastructure Team
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Prerequisites](#2-prerequisites)
-3. [Repository Structure](#3-repository-structure)
-4. [Bootstrap — Remote State Setup](#4-bootstrap--remote-state-setup)
-5. [First-Time Deployment (dev)](#5-first-time-deployment-dev)
-6. [Day-2 Operations](#6-day-2-operations)
-   - [Applying Changes](#61-applying-changes)
-   - [Targeted Resource Updates](#62-targeted-resource-updates)
-   - [Adding a New Module](#63-adding-a-new-module)
-   - [Rotating the EC2 Key Pair](#64-rotating-the-ec2-key-pair)
-7. [Deploying to Staging & Production](#7-deploying-to-staging--production)
-8. [Destroying an Environment](#8-destroying-an-environment)
-9. [Module Reference](#9-module-reference)
-   - [VPC](#91-vpc-module)
-   - [Security Group](#92-security-group-module)
-   - [Key Pair](#93-key-pair-module)
-   - [IAM (EKS)](#94-iam-eks-module)
-10. [State Management](#10-state-management)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Security Checklist](#12-security-checklist)
+- [Finishline Infrastructure — Runbook](#finishline-infrastructure--runbook)
+  - [Table of Contents](#table-of-contents)
+  - [1. Overview](#1-overview)
+  - [2. Prerequisites](#2-prerequisites)
+    - [Tools](#tools)
+    - [AWS Permissions](#aws-permissions)
+    - [AWS CLI Configuration](#aws-cli-configuration)
+  - [3. Repository Structure](#3-repository-structure)
+  - [4. Bootstrap — Remote State Setup](#4-bootstrap--remote-state-setup)
+    - [4.1 Create the S3 State Bucket (one-time)](#41-create-the-s3-state-bucket-one-time)
+    - [4.2 Backend Configuration (`backend.tf`)](#42-backend-configuration-backendtf)
+  - [5. First-Time Deployment (dev)](#5-first-time-deployment-dev)
+    - [Step 1 — Clone the repository](#step-1--clone-the-repository)
+    - [Step 2 — Change to the dev environment](#step-2--change-to-the-dev-environment)
+    - [Step 3 — Create a `terraform.tfvars` file](#step-3--create-a-terraformtfvars-file)
+    - [Step 4 — Initialise Terraform](#step-4--initialise-terraform)
+    - [Step 5 — Validate configuration](#step-5--validate-configuration)
+    - [Step 6 — Review the plan](#step-6--review-the-plan)
+    - [Step 7 — Apply](#step-7--apply)
+    - [Step 8 — Verify outputs](#step-8--verify-outputs)
+  - [6. Day-2 Operations](#6-day-2-operations)
+    - [6.1 Applying Changes](#61-applying-changes)
+    - [6.2 Targeted Resource Updates](#62-targeted-resource-updates)
+    - [6.3 Adding a New Module](#63-adding-a-new-module)
+    - [6.4 Rotating the EC2 Key Pair](#64-rotating-the-ec2-key-pair)
+  - [7. Deploying to Staging \& Production](#7-deploying-to-staging--production)
+    - [Step 1 — Configure the backend](#step-1--configure-the-backend)
+    - [Step 2 — Add `providers.tf`](#step-2--add-providerstf)
+    - [Step 3 — Copy and customise `variables.tf` and `main.tf` from dev](#step-3--copy-and-customise-variablestf-and-maintf-from-dev)
+    - [Step 4 — Create `terraform.tfvars` for the environment](#step-4--create-terraformtfvars-for-the-environment)
+    - [Step 5 — Deploy](#step-5--deploy)
+  - [8. Destroying an Environment](#8-destroying-an-environment)
+  - [9. Module Reference](#9-module-reference)
+    - [9.1 VPC Module](#91-vpc-module)
+    - [9.2 Security Group Module](#92-security-group-module)
+    - [9.3 Key Pair Module](#93-key-pair-module)
+    - [9.4 IAM (EKS) Module](#94-iam-eks-module)
+    - [9.5 EKS Module](#95-eks-module)
+      - [Retrieve kubeconfig after apply](#retrieve-kubeconfig-after-apply)
+  - [11. Static Analysis \& Cost Estimation](#11-static-analysis--cost-estimation)
+    - [11.1 tfsec — IaC Security Scanner](#111-tfsec--iac-security-scanner)
+    - [11.2 Checkov — Policy-as-Code Scanner](#112-checkov--policy-as-code-scanner)
+    - [11.3 Infracost — Cloud Cost Estimation](#113-infracost--cloud-cost-estimation)
+    - [11.4 Recommended Workflow](#114-recommended-workflow)
+  - [10. State Management](#10-state-management)
+    - [View current state](#view-current-state)
+    - [Inspect a specific resource](#inspect-a-specific-resource)
+    - [Move a resource (refactoring)](#move-a-resource-refactoring)
+    - [Remove a resource from state (without destroying it)](#remove-a-resource-from-state-without-destroying-it)
+    - [Pull remote state locally](#pull-remote-state-locally)
+    - [Unlock state (if a lock is stuck)](#unlock-state-if-a-lock-is-stuck)
+  - [11. Troubleshooting](#11-troubleshooting)
+    - [`Error: No declaration found for "var.X"`](#error-no-declaration-found-for-varx)
+    - [`Error: Reference to undeclared resource`](#error-reference-to-undeclared-resource)
+    - [`Error acquiring the state lock`](#error-acquiring-the-state-lock)
+    - [`Error: InvalidKeyPair.Duplicate`](#error-invalidkeypairduplicate)
+    - [`Error: creating IAM Role: EntityAlreadyExists`](#error-creating-iam-role-entityalreadyexists)
+    - [`terraform plan` shows unexpected changes after no code change](#terraform-plan-shows-unexpected-changes-after-no-code-change)
+  - [12. Security Checklist](#12-security-checklist)
 
 ---
 
@@ -189,22 +228,22 @@ Create `terraform/environments/dev/terraform.tfvars` (never commit secrets):
 
 ```hcl
 # General
-project_name = "finishline"
+project_name = "finishline-infra"
 environment  = "dev"
-manage_by    = "Terraform"
+manage_by    = "finishline-dev-team"
 aws_region   = "us-east-1"
 
 # VPC
-vpc_cidr              = "10.0.0.0/16"
-enable_dns_hostnames  = true
-enable_dns_support    = true
+vpc_cidr                = "10.0.0.0/16"
+enable_dns_hostnames    = true
+enable_dns_support      = true
 map_public_ip_on_launch = true
-availability_zones    = ["us-east-1a", "us-east-1b"]
-public_subnets_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
-private_subnets_cidrs = ["10.0.11.0/24", "10.0.12.0/24"]
+availability_zones      = ["us-east-1a", "us-east-1b", "us-east-1c"]
+public_subnets_cidrs    = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+private_subnets_cidrs   = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
 
 # Security Group
-security_group_name = "finishline-dev-sg"
+security_group_name = "finishline-sg"
 ingress_rules = [
   {
     description = "Allow SSH"
@@ -212,13 +251,6 @@ ingress_rules = [
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]   # restrict to a known CIDR in production
-  },
-  {
-    description = "Allow HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
   }
 ]
 egress_rules = [
@@ -233,6 +265,38 @@ egress_rules = [
 
 # Key Pair
 key_name = "finishline-key-pair"
+
+# IAM
+is_eks_role_enabled           = true
+is_eks_nodegroup_role_enabled = true
+
+# EKS Cluster
+cluster_name              = "finishline-eks-cluster"
+is_eks_cluster_enabled    = true
+is_eks_node_group_enabled = true
+is_eks_addons_enabled     = true
+cluster_version           = "1.29"   # must be >= 1.29 with AWS provider 6.x
+endpoint_private_access   = true
+endpoint_public_access    = false
+cluster_enabled_log_types = ["api", "audit", "authenticator"]
+
+addons = {
+  coredns    = { version = "v1.11.1-eksbuild.9" }
+  kube-proxy = { version = "v1.29.3-eksbuild.2" }
+  vpc-cni    = { version = "v1.18.1-eksbuild.3" }
+}
+
+# On-demand node group
+desired_capacity_on_demand = 2
+min_capacity_on_demand     = 1
+max_capacity_on_demand     = 4
+ondemand_instance_types    = ["t3.medium"]
+
+# Spot node group
+desired_capacity_spot  = 1
+min_capacity_spot      = 0
+max_capacity_spot      = 3
+spot_instance_types    = ["t3.medium", "t3.large"]
 ```
 
 ### Step 4 — Initialise Terraform
@@ -312,12 +376,13 @@ terraform apply tfplan
 
 Common targets:
 
-| Target                 | Description                      |
-| ---------------------- | -------------------------------- |
-| `module.vpc`           | VPC and all networking resources |
-| `module.finishline_sg` | Security group                   |
-| `module.key_pair`      | EC2 key pair                     |
-| `module.iam`           | EKS IAM roles and OIDC provider  |
+| Target                 | Description                                 |
+| ---------------------- | ------------------------------------------- |
+| `module.vpc`           | VPC and all networking resources            |
+| `module.finishline_sg` | Security group                              |
+| `module.key_pair`      | EC2 key pair                                |
+| `module.iam`           | EKS IAM roles and OIDC provider             |
+| `module.eks`           | EKS cluster, OIDC provider, and node groups |
 
 ### 6.3 Adding a New Module
 
@@ -527,6 +592,317 @@ Pass this value as `eks_oidc_url`.
 
 ---
 
+### 9.5 EKS Module
+
+**Path**: `terraform/modules/eks/`
+
+Creates the EKS control plane, OpenID Connect ( OIDC ) identity provider, on-demand and spot managed node groups, and optional add-ons.
+
+| Variable                     | Type         | Default                           | Description                                                    |
+| ---------------------------- | ------------ | --------------------------------- | -------------------------------------------------------------- |
+| `cluster_name`               | string       | —                                 | EKS cluster name                                               |
+| `cluster_version`            | string       | —                                 | Kubernetes version (≥ 1.29 required with AWS provider ≥ 6.x)   |
+| `cluster_role_arn`           | string       | —                                 | IAM role ARN for the EKS control plane (from `module.iam`)     |
+| `node_role_arn`              | string       | —                                 | IAM role ARN for node groups (from `module.iam`)               |
+| `subnet_ids`                 | list(string) | —                                 | Private subnet IDs (from `module.vpc`)                         |
+| `security_group_ids`         | list(string) | —                                 | Security group IDs to attach to the cluster                    |
+| `is_eks_cluster_enabled`     | bool         | —                                 | Create the EKS cluster and OIDC provider                       |
+| `is_eks_node_group_enabled`  | bool         | —                                 | Create on-demand and spot node groups                          |
+| `is_eks_addons_enabled`      | bool         | —                                 | Install add-ons via `aws_eks_addon`                            |
+| `endpoint_private_access`    | bool         | `true`                            | Enable private API server endpoint                             |
+| `endpoint_public_access`     | bool         | `false`                           | Enable public API server endpoint                              |
+| `cluster_enabled_log_types`  | list(string) | `["api","audit","authenticator"]` | Control plane log types forwarded to CloudWatch                |
+| `addons`                     | map(any)     | `{}`                              | Map of `addon_name → { version, service_account_role_arn? }`   |
+| `desired_capacity_on_demand` | number       | `2`                               | On-demand desired node count                                   |
+| `min_capacity_on_demand`     | number       | `1`                               | On-demand minimum node count                                   |
+| `max_capacity_on_demand`     | number       | `4`                               | On-demand maximum node count                                   |
+| `ondemand_instance_types`    | list(string) | `["t3.medium"]`                   | EC2 instance types for on-demand nodes                         |
+| `desired_capacity_spot`      | number       | `1`                               | Spot desired node count                                        |
+| `min_capacity_spot`          | number       | `0`                               | Spot minimum node count                                        |
+| `max_capacity_spot`          | number       | `3`                               | Spot maximum node count                                        |
+| `spot_instance_types`        | list(string) | `["t3.medium","t3.large"]`        | EC2 instance types for spot nodes (multiple = better capacity) |
+
+**Outputs**: `cluster_id`, `cluster_arn`, `cluster_endpoint`, `cluster_version`, `cluster_certificate_authority_data`, `cluster_security_group_id`, `cluster_oidc_issuer`, `cluster_oidc_provider_arn`, `ondemand_node_group_id`, `ondemand_node_group_arn`, `spot_node_group_id`, `spot_node_group_arn`
+
+> **Dependency flow**: `module.iam` creates IAM roles → `module.eks` uses those roles and creates the cluster + OIDC provider → Terraform feeds `module.eks.cluster_oidc_issuer` back to `module.iam` to create the OIDC IAM role/policy. Terraform's dependency graph resolves this automatically without a circular module dependency.
+
+#### Retrieve kubeconfig after apply
+
+```bash
+aws eks update-kubeconfig \
+  --name finishline-eks-cluster \
+  --region us-east-1
+
+kubectl get nodes
+```
+
+---
+
+## 11. Static Analysis & Cost Estimation
+
+Run these tools **before every `terraform plan`** in your local workflow and **in CI/CD as mandatory gates** before merging infrastructure changes.
+
+### 11.1 tfsec — IaC Security Scanner
+
+**What it does:** Scans Terraform source code for known security misconfigurations using built-in rules (AWS, Azure, GCP) and custom checks.
+
+**When to use:**
+
+- Locally: before opening a pull request
+- CI/CD: as a required check on every push to any branch touching `terraform/`
+- Pre-release: before promoting changes from dev → staging → prod
+
+**Install:**
+
+```bash
+# Homebrew (macOS / Linux)
+brew install tfsec
+
+# or download binary
+curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+```
+
+**Run against the whole project:**
+
+```bash
+tfsec terraform/
+```
+
+**Run against a single environment:**
+
+```bash
+tfsec terraform/environments/dev/
+```
+
+**Run against a single module:**
+
+```bash
+tfsec terraform/modules/eks/
+```
+
+**Common flags:**
+
+```bash
+# Show only HIGH and CRITICAL
+tfsec terraform/ --minimum-severity HIGH
+
+# Output as JUnit XML (for CI)
+tfsec terraform/ --format junit --out tfsec-results.xml
+
+# Ignore a specific check with a comment in code:
+# tfsec:ignore:aws-eks-no-public-cluster-access
+```
+
+**Key EKS checks this project addresses:**
+
+| tfsec Rule                             | Status | How                                      |
+| -------------------------------------- | ------ | ---------------------------------------- |
+| `aws-eks-no-public-cluster-access`     | ✅     | `endpoint_public_access = false`         |
+| `aws-eks-enable-control-plane-logging` | ✅     | `cluster_enabled_log_types` set          |
+| `aws-iam-no-policy-wildcards`          | ✅     | IAM module uses scoped managed policies  |
+| `aws-vpc-no-public-egress-sgr`         | ⚠️     | Dev allows all egress — restrict in prod |
+
+---
+
+### 11.2 Checkov — Policy-as-Code Scanner
+
+**What it does:** Scans Terraform, CloudFormation, Dockerfiles, Kubernetes manifests, and more against 1000+ security and compliance policies (CIS, HIPAA, PCI-DSS, NIST).
+
+**When to use:**
+
+- Locally: during development, especially when adding new resources
+- CI/CD: as a required check in the same pipeline step as tfsec (they complement each other)
+- Compliance reviews: generate reports before audits
+
+**Install:**
+
+```bash
+pip install checkov
+# or via brew
+brew install checkov
+```
+
+**Run against the whole project:**
+
+```bash
+checkov -d terraform/
+```
+
+**Run against a single environment:**
+
+```bash
+checkov -d terraform/environments/dev/
+```
+
+**Run against a single module:**
+
+```bash
+checkov -d terraform/modules/eks/
+```
+
+**Common flags:**
+
+```bash
+# Output as JUnit XML (for CI)
+checkov -d terraform/ --output junitxml > checkov-results.xml
+
+# Output as GitHub Actions annotations
+checkov -d terraform/ --output github_failed_only
+
+# Skip a specific check
+checkov -d terraform/ --skip-check CKV_AWS_58
+
+# Run only EKS-related checks
+checkov -d terraform/ --check CKV_AWS_58,CKV_AWS_37,CKV_AWS_38,CKV_AWS_39,CKV_AWS_185
+```
+
+**Key EKS / IAM Checkov checks:**
+
+| Check ID      | Description                                        | Status |
+| ------------- | -------------------------------------------------- | ------ |
+| `CKV_AWS_37`  | EKS API server should not be publicly accessible   | ✅     |
+| `CKV_AWS_38`  | EKS should have private endpoint enabled           | ✅     |
+| `CKV_AWS_39`  | EKS should have cluster logging enabled            | ✅     |
+| `CKV_AWS_58`  | EKS cluster should use encrypted secrets           | ⚠️     |
+| `CKV_AWS_185` | EKS cluster should not use deprecated API versions | ✅     |
+| `CKV_AWS_111` | IAM policies should not allow `*` on all resources | ✅     |
+| `CKV_AWS_382` | Security group should not have unrestricted egress | ⚠️     |
+
+> **Note on `CKV_AWS_58`**: EKS secrets encryption requires a KMS key configured via the `encryption_config` block. This is not yet implemented — add it before using staging/prod.
+
+---
+
+### 11.3 Infracost — Cloud Cost Estimation
+
+**What it does:** Parses Terraform plan output and estimates the monthly AWS cost of all resources, showing a line-item breakdown and the cost delta for changes.
+
+**When to use:**
+
+- Before `terraform apply` to understand the cost impact of new resources
+- During code review — show the monthly cost diff in pull request comments
+- Budget planning — before provisioning new environments (staging, prod)
+- Evaluating instance type trade-offs (e.g., `t3.medium` vs `t3.large`)
+
+**Install:**
+
+```bash
+brew install infracost
+# or
+curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+
+# Register for a free API key
+infracost auth login
+```
+
+**Generate a cost estimate (requires a terraform plan JSON):**
+
+```bash
+cd terraform/environments/dev
+
+# Step 1 — generate a plan
+terraform plan -out=tfplan
+
+# Step 2 — convert plan to JSON
+terraform show -json tfplan > plan.json
+
+# Step 3 — estimate cost
+infracost breakdown --path plan.json
+```
+
+**Show cost diff for a change:**
+
+```bash
+# Baseline (main branch)
+infracost breakdown --path plan.json --format json --out-file infracost-base.json
+
+# After your change
+infracost diff --path plan.json --compare-to infracost-base.json
+```
+
+**Typical monthly cost drivers in this project (dev):**
+
+| Resource                          | Approx Monthly Cost      |
+| --------------------------------- | ------------------------ |
+| EKS Control Plane                 | ~$73 (fixed per cluster) |
+| On-demand nodes (2× t3.medium)    | ~$60                     |
+| Spot nodes (1× t3.medium at ~70%) | ~$10                     |
+| NAT Gateway (if enabled)          | ~$32 + data transfer     |
+| EKS Add-ons (CoreDNS, vpc-cni)    | $0 (no extra charge)     |
+| S3 state bucket                   | < $1                     |
+
+> 🔔 Run `infracost breakdown` before provisioning staging/prod to avoid unexpected costs. EKS clusters are billed per hour even when idle.
+
+---
+
+### 11.4 Recommended Workflow
+
+Use all three tools together in this order before every `terraform apply`:
+
+```bash
+cd terraform/environments/dev
+
+# 1. Format check
+terraform fmt -check -recursive ../../
+
+# 2. Validate HCL syntax and variable references
+terraform validate
+
+# 3. Security scan (fast, no AWS credentials needed)
+tfsec ../../modules/eks/ ../../modules/secret/iam/ .
+
+# 4. Policy-as-code compliance scan
+checkov -d . --quiet
+
+# 5. Cost estimate (requires terraform plan)
+terraform plan -out=tfplan
+terraform show -json tfplan > plan.json
+infracost breakdown --path plan.json
+
+# 6. Apply only after reviewing all outputs
+terraform apply tfplan
+```
+
+**CI/CD pipeline gate (GitHub Actions example):**
+
+```yaml
+# .github/workflows/terraform.yml
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: terraform/
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          output_format: github_failed_only
+          soft_fail: false
+
+      - name: Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - run: |
+          cd terraform/environments/dev
+          terraform init -backend=false
+          infracost breakdown --path . \
+            --format github-comment \
+            --out-file /tmp/infracost.md
+      - uses: infracost/actions/comment@v3
+        with:
+          path: /tmp/infracost.md
+          behavior: update
+```
+
+---
+
 ## 10. State Management
 
 ### View current state
@@ -609,19 +985,22 @@ This can happen with `random_integer` resources on re-plan if the seed changes. 
 
 ## 12. Security Checklist
 
-| #   | Check                                                        | Status                                |
-| --- | ------------------------------------------------------------ | ------------------------------------- |
-| 1   | S3 state bucket has versioning enabled                       | ✅                                    |
-| 2   | S3 state bucket has SSE encryption enabled                   | ✅                                    |
-| 3   | S3 state bucket blocks all public access                     | ✅                                    |
-| 4   | State locking is enabled (`use_lockfile = true`)             | ✅                                    |
-| 5   | `.pem` private key file is excluded from git (`.gitignore`)  | ✅                                    |
-| 6   | `terraform.tfvars` is excluded from git                      | ⚠️ Verify `.gitignore`                |
-| 7   | IAM policies follow least-privilege (no `*` resources)       | ✅ (fixed in IAM module)              |
-| 8   | OIDC policy scoped to specific S3 bucket via `s3_bucket_arn` | ✅                                    |
-| 9   | EC2 SSH ingress restricted to known CIDRs in prod            | ⚠️ Review SG rules                    |
-| 10  | Private subnets do not have a direct route to IGW            | ⚠️ Review VPC private route table     |
-| 11  | EKS node group does not use `AdministratorAccess` policy     | ✅ (uses scoped AWS managed policies) |
-| 12  | OIDC thumbprint list kept up-to-date                         | ⚠️ Rotate when AWS root CA changes    |
+| #   | Check                                                               | Status                                    |
+| --- | ------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | S3 state bucket has versioning enabled                              | ✅                                        |
+| 2   | S3 state bucket has SSE encryption enabled                          | ✅                                        |
+| 3   | S3 state bucket blocks all public access                            | ✅                                        |
+| 4   | State locking is enabled (`use_lockfile = true`)                    | ✅                                        |
+| 5   | `.pem` private key file is excluded from git (`.gitignore`)         | ✅                                        |
+| 6   | `terraform.tfvars` is excluded from git                             | ⚠️ Verify `.gitignore`                    |
+| 7   | IAM policies follow least-privilege (no `*` resources)              | ✅ (fixed in IAM module)                  |
+| 8   | OIDC policy scoped to specific S3 bucket via `s3_bucket_arn`        | ✅                                        |
+| 9   | EC2 SSH ingress restricted to known CIDRs in prod                   | ⚠️ Review SG rules                        |
+| 10  | Private subnets do not have a direct route to IGW                   | ⚠️ Review VPC private route table         |
+| 11  | EKS node group does not use `AdministratorAccess` policy            | ✅ (uses scoped AWS managed policies)     |
+| 12  | OIDC thumbprint derived from live TLS cert (`data.tls_certificate`) | ✅ (EKS module uses data source)          |
+| 13  | EKS API endpoint public access disabled in dev/prod                 | ✅ (`endpoint_public_access = false`)     |
+| 14  | EKS Auto Mode explicitly disabled (managed node groups used)        | ✅ (`compute_config { enabled = false }`) |
+| 15  | EKS cluster version ≥ 1.29 for AWS provider 6.x compatibility       | ✅ (`cluster_version = "1.29"`)           |
 
 > ⚠️ Items: ensure `terraform.tfvars` is listed in `.gitignore`, restrict SSH CIDR in production ingress rules, and verify the private route table does not route directly through the IGW (currently it does — consider adding a NAT Gateway for production environments).

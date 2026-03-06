@@ -192,9 +192,37 @@ Application Load Balancer configuration.
 
 EC2 instance configuration.
 
-### `modules/eks` _(pending implementation)_
+### `modules/eks`
 
-EKS cluster and managed node group configuration.
+EKS cluster, OIDC identity provider, and managed node groups (on-demand + spot).
+
+| Resource                                 | Condition Variable           | Description                                             |
+| ---------------------------------------- | ---------------------------- | ------------------------------------------------------- |
+| `data.tls_certificate.eks_cert`          | `is_eks_cluster_enabled`     | Fetches TLS thumbprint for OIDC provider registration   |
+| `aws_eks_cluster.eks`                    | `is_eks_cluster_enabled`     | EKS control plane with configurable Kubernetes version  |
+| `aws_iam_openid_connect_provider`        | `is_eks_cluster_enabled`     | OIDC identity provider derived from cluster issuer      |
+| `aws_eks_node_group.ondemand-node`       | `is_eks_node_group_enabled`  | On-demand managed node group with configurable scaling  |
+| `aws_eks_node_group.spot-node`           | `is_eks_node_group_enabled`  | Spot managed node group with configurable scaling       |
+| `aws_eks_addon.eks-addons` (for_each)    | `is_eks_addons_enabled`      | EKS add-ons (CoreDNS, kube-proxy, vpc-cni, etc.)        |
+
+**Key Variables**:
+
+| Variable                   | Type         | Description                                                  |
+| -------------------------- | ------------ | ------------------------------------------------------------ |
+| `cluster_name`             | string       | EKS cluster name                                             |
+| `cluster_version`          | string       | Kubernetes version (≥ 1.29 required for AWS provider 6.x)   |
+| `cluster_role_arn`         | string       | ARN of the EKS control-plane IAM role (from `secret/iam`)   |
+| `node_role_arn`            | string       | ARN of the EC2 node group IAM role (from `secret/iam`)       |
+| `subnet_ids`               | list(string) | Private subnet IDs for cluster and node placement            |
+| `security_group_ids`       | list(string) | Additional security group IDs attached to the cluster        |
+| `endpoint_private_access`  | bool         | Enable private API endpoint access                           |
+| `endpoint_public_access`   | bool         | Enable public API endpoint access                            |
+| `cluster_enabled_log_types`| list(string) | Control plane logs: api, audit, authenticator, etc.          |
+| `addons`                   | map(any)     | Add-on name → `{ version, service_account_role_arn? }`       |
+
+**Outputs**: `cluster_id`, `cluster_arn`, `cluster_endpoint`, `cluster_version`, `cluster_certificate_authority_data`, `cluster_security_group_id`, `cluster_oidc_issuer`, `cluster_oidc_provider_arn`, `ondemand_node_group_id`, `ondemand_node_group_arn`, `spot_node_group_id`, `spot_node_group_arn`
+
+> **Auto Mode note**: The module explicitly sets `compute_config { enabled = false }`, `storage_config { block_storage { enabled = false } }`, and `kubernetes_network_config { elastic_load_balancing { enabled = false } }` to opt out of EKS Auto Mode and use traditional managed node groups (required with AWS provider ≥ 6.x).
 
 ---
 
