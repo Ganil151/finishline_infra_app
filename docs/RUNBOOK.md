@@ -19,6 +19,13 @@
   - [4. Bootstrap — Remote State Setup](#4-bootstrap--remote-state-setup)
     - [4.1 Create the S3 State Bucket (one-time)](#41-create-the-s3-state-bucket-one-time)
     - [4.2 Backend Configuration (`backend.tf`)](#42-backend-configuration-backendtf)
+    - [4.3 VPC Construction and Function](#43-vpc-construction-and-function)
+      - [VPC Components](#vpc-components)
+      - [Network Architecture](#network-architecture)
+      - [VPC Configuration Variables](#vpc-configuration-variables)
+      - [VPC Outputs](#vpc-outputs)
+      - [VPC Usage in Environment](#vpc-usage-in-environment)
+      - [Security Considerations](#security-considerations)
   - [5. First-Time Deployment (dev)](#5-first-time-deployment-dev)
     - [Step 1 — Clone the repository](#step-1--clone-the-repository)
     - [Step 2 — Change to the dev environment](#step-2--change-to-the-dev-environment)
@@ -204,6 +211,115 @@ terraform {
 ```
 
 > **Note**: `use_lockfile = true` uses S3 native locking (no DynamoDB required — requires AWS provider ≥ 6.x and Terraform ≥ 1.6).
+
+---
+
+### 4.3 VPC Construction and Function
+
+The VPC (Virtual Private Cloud) module creates the foundational network infrastructure for the Finishline AWS environment. This section describes the components created by the VPC module and their functions.
+
+#### VPC Components
+
+The VPC module (`terraform/modules/vpc/`) creates the following resources:
+
+| Resource                                                                   | Description                                                                                                                                                                    |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`aws_vpc.finishline_vpc`](terraform/modules/vpc/main.tf:1)                | The main VPC with a configurable CIDR block (default: `10.0.0.0/16`). DNS hostnames and DNS support are enabled by default for name resolution.                                |
+| [`aws_internet_gateway.finishline_igw`](terraform/modules/vpc/main.tf:12)  | Internet Gateway attached to the VPC, enabling outbound internet access for resources in public subnets.                                                                       |
+| [`aws_subnet.finishline_public_subnet`](terraform/modules/vpc/main.tf:21)  | Public subnets distributed across the specified availability zones. These subnets have `map_public_ip_on_launch = true`, assigning public IPs to instances launched into them. |
+| [`aws_subnet.finishline_private_subnet`](terraform/modules/vpc/main.tf:36) | Private subnets for resources that should not have direct internet access. Distributed across the same availability zones as public subnets.                                   |
+| [`aws_eip.finishline_eip`](terraform/modules/vpc/main.tf:49)               | Elastic IP address allocated for potential NAT Gateway usage.                                                                                                                  |
+| [`aws_route_table.public`](terraform/modules/vpc/main.tf:59)               | Public route table with a default route (`0.0.0.0/0`) pointing to the Internet Gateway.                                                                                        |
+| [`aws_route_table.private`](terraform/modules/vpc/main.tf:77)              | Private route table with a default route (`0.0.0.0/0`) pointing to the Internet Gateway.                                                                                       |
+| [`aws_route_table_association.public`](terraform/modules/vpc/main.tf:71)   | Associates public subnets with the public route table.                                                                                                                         |
+| [`aws_route_table_association.private`](terraform/modules/vpc/main.tf:89)  | Associates private subnets with the private route table.                                                                                                                       |
+
+#### Network Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VPC (10.0.0.0/16)                        │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Internet Gateway (IGW)                     │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                         │                                      │
+│         ┌──────────────┴──────────────┐                       │
+│         │                             │                        │
+│  ┌──────▼──────┐              ┌───────▼───────┐                │
+│  │ Public RT  │              │  Private RT   │                │
+│  └──────┬──────┘              └───────┬───────┘                │
+│         │                             │                        │
+│  ┌──────┼──────┐              ┌───────┼───────┐               │
+│  │ Pubsubnet1 │              │ Privsubnet1 │               │
+│  │ 10.0.1.0/24│              │ 10.0.4.0/24 │               │
+│  │ us-east-1a │              │ us-east-1a  │               │
+│  └─────────────┘              └─────────────┘               │
+│  ┌─────────────┐              ┌─────────────┐               │
+│  │ Pubsubnet2  │              │ Privsubnet2 │               │
+│  │ 10.0.2.0/24│              │ 10.0.5.0/24 │               │
+│  │ us-east-1b │              │ us-east-1b  │               │
+│  └─────────────┘              └─────────────┘               │
+│  ┌─────────────┐              ┌─────────────┐               │
+│  │ Pubsubnet3  │              │ Privsubnet3 │               │
+│  │ 10.0.3.0/24│              │ 10.0.6.0/24 │               │
+│  │ us-east-1c │              │ us-east-1c  │               │
+│  └─────────────┘              └─────────────┘               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### VPC Configuration Variables
+
+The VPC module accepts the following configurable variables (defined in [`variables.tf`](terraform/modules/vpc/variables.tf:1)):
+
+| Variable                | Description                                       | Default  |
+| ----------------------- | ------------------------------------------------- | -------- |
+| `project_name`          | The name of the project (used in resource naming) | Required |
+| `environment`           | The environment name (dev/staging/prod)           | Required |
+| `manage_by`             | The entity responsible for managing resources     | Required |
+| `vpc_cidr`              | The CIDR block for the VPC                        | Required |
+| `enable_dns_hostnames`  | Whether to enable DNS hostnames                   | `true`   |
+| `enable_dns_support`    | Whether to enable DNS support                     | `true`   |
+| `availability_zones`    | List of availability zones for subnet placement   | Required |
+| `public_subnets_cidrs`  | CIDR blocks for public subnets                    | Required |
+| `private_subnets_cidrs` | CIDR blocks for private subnets                   | Required |
+
+#### VPC Outputs
+
+After deployment, the VPC module providesdefined in [`output.tf`](terraform/modules the following outputs (/vpc/output.tf:1)):
+
+| Output                    | Description                         |
+| ------------------------- | ----------------------------------- |
+| `main_vpc_id`             | The ID of the created VPC           |
+| `main_public_subnet_ids`  | List of IDs for all public subnets  |
+| `main_private_subnet_ids` | List of IDs for all private subnets |
+
+#### VPC Usage in Environment
+
+The VPC module is called from each environment's `main.tf` with environment-specific variables. Example from the dev environment:
+
+```hcl
+module "vpc" {
+  source = "../../modules/vpc"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  manage_by              = var.manage_by
+  vpc_cidr               = var.vpc_cidr
+  enable_dns_hostnames   = var.enable_dns_hostnames
+  enable_dns_support     = var.enable_dns_support
+  availability_zones     = var.availability_zones
+  public_subnets_cidrs   = var.public_subnets_cidrs
+  private_subnets_cidrs  = var.private_subnets_cidrs
+}
+```
+
+#### Security Considerations
+
+- **CIDR Range Selection**: Ensure the VPC CIDR does not overlap with any existing networks (on-premises VPN, other VPCs, etc.)
+- **Public Subnet Access**: Resources in public subnets are directly accessible from the internet. Only place load balancers, NAT gateways, or bastion hosts in public subnets.
+- **Private Subnet Isolation**: Resources in private subnets cannot be accessed directly from the internet. They can reach the internet through a NAT gateway (not configured in current setup) or through other controlled pathways.
+- **Availability Zones**: For high availability, distribute subnets across multiple AZs (recommended: 3 for production).
 
 ---
 
@@ -985,23 +1101,23 @@ This can happen with `random_integer` resources on re-plan if the seed changes. 
 
 ## 12. Security Checklist
 
-| #   | Check                                                               | Status                                   |
-| --- | ------------------------------------------------------------------- | ---------------------------------------- |
+| #   | Check                                                               | Status                                    |
+| --- | ------------------------------------------------------------------- | ----------------------------------------- |
 | 1   | S3 state bucket has versioning enabled                              | ✅                                        |
 | 2   | S3 state bucket has SSE encryption enabled                          | ✅                                        |
 | 3   | S3 state bucket blocks all public access                            | ✅                                        |
 | 4   | State locking is enabled (`use_lockfile = true`)                    | ✅                                        |
 | 5   | `.pem` private key file is excluded from git (`.gitignore`)         | ✅                                        |
-| 6   | `terraform.tfvars` is excluded from git                             | ⚠️ Verify `.gitignore`                   |
+| 6   | `terraform.tfvars` is excluded from git                             | ⚠️ Verify `.gitignore`                    |
 | 7   | IAM policies follow least-privilege (no `*` resources)              | ✅ (fixed in IAM module)                  |
 | 8   | OIDC policy scoped to specific S3 bucket via `s3_bucket_arn`        | ✅                                        |
-| 9   | EC2 SSH ingress restricted to known CIDRs in prod                   | ⚠️ Review SG rules                       |
-| 10  | Private subnets do not have a direct route to IGW                   | ⚠️ Review VPC private route table        |
+| 9   | EC2 SSH ingress restricted to known CIDRs in prod                   | ⚠️ Review SG rules                        |
+| 10  | Private subnets do not have a direct route to IGW                   | ⚠️ Review VPC private route table         |
 | 11  | EKS node group does not use `AdministratorAccess` policy            | ✅ (uses scoped AWS managed policies)     |
 | 12  | OIDC thumbprint derived from live TLS cert (`data.tls_certificate`) | ✅ (EKS module uses data source)          |
 | 13  | EKS API endpoint public access disabled in dev/prod                 | ✅ (`endpoint_public_access = false`)     |
 | 14  | EKS Auto Mode explicitly disabled (managed node groups used)        | ✅ (`compute_config { enabled = false }`) |
 | 15  | EKS cluster version ≥ 1.35 for AWS provider 6.x compatibility       | ✅ (`cluster_version = "1.35"`)           |
-|     |                                                                     |                                          |
+|     |                                                                     |                                           |
 
 > ⚠️ Items: ensure `terraform.tfvars` is listed in `.gitignore`, restrict SSH CIDR in production ingress rules, and verify the private route table does not route directly through the IGW (currently it does — consider adding a NAT Gateway for production environments).

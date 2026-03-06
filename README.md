@@ -112,20 +112,83 @@ finishline_infra_app/
 
 ### `modules/vpc`
 
-Provisions the core networking layer.
+Provisions the core networking layer for the Finishline AWS environment. This module creates a VPC with public and private subnets distributed across multiple availability zones.
 
-| Resource                      | Description                                               |
-| ----------------------------- | --------------------------------------------------------- |
-| `aws_vpc`                     | Main VPC with configurable CIDR                           |
-| `aws_subnet` (public)         | Public subnets across availability zones, tagged for EKS  |
-| `aws_subnet` (private)        | Private subnets across availability zones, tagged for EKS |
-| `aws_internet_gateway`        | Internet Gateway attached to VPC                          |
-| `aws_eip`                     | Elastic IP for NAT gateway                                |
-| `aws_route_table` (public)    | Routes public traffic via IGW                             |
-| `aws_route_table` (private)   | Private route table                                       |
-| `aws_route_table_association` | Associates subnets to route tables                        |
+#### Network Architecture
 
-**Outputs**: `main_vpc_id`, subnet IDs
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VPC (10.0.0.0/16)                        │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Internet Gateway (IGW)                     │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                         │                                      │
+│         ┌──────────────┴──────────────┐                       │
+│         │                             │                        │
+│  ┌──────▼──────┐              ┌───────▼───────┐                │
+│  │ Public RT  │              │  Private RT   │                │
+│  └──────┬──────┘              └───────┬───────┘                │
+│         │                             │                        │
+│  ┌──────┼──────┐              ┌───────┼───────┐               │
+│  │ Pubsubnet1 │              │ Privsubnet1 │               │
+│  │ 10.0.1.0/24│              │ 10.0.4.0/24 │               │
+│  │ us-east-1a │              │ us-east-1a  │               │
+│  └─────────────┘              └─────────────┘               │
+│  ┌─────────────┐              ┌─────────────┐               │
+│  │ Pubsubnet2  │              │ Privsubnet2 │               │
+│  │ 10.0.2.0/24│              │ 10.0.5.0/24 │               │
+│  │ us-east-1b │              │ us-east-1b  │               │
+│  └─────────────┘              └─────────────┘               │
+│  ┌─────────────┐              ┌─────────────┐               │
+│  │ Pubsubnet3  │              │ Privsubnet3 │               │
+│  │ 10.0.3.0/24│              │ 10.0.6.0/24 │               │
+│  │ us-east-1c │              │ us-east-1c  │               │
+│  └─────────────┘              └─────────────┘               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Resources Created
+
+| Resource                      | Description                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `aws_vpc`                     | Main VPC with configurable CIDR, DNS hostnames and support enabled                         |
+| `aws_subnet` (public)         | Public subnets across availability zones, `map_public_ip_on_launch = true`, tagged for EKS |
+| `aws_subnet` (private)        | Private subnets across availability zones, tagged for EKS                                  |
+| `aws_internet_gateway`        | Internet Gateway attached to VPC for outbound internet access                              |
+| `aws_eip`                     | Elastic IP allocated for potential NAT Gateway usage                                       |
+| `aws_route_table` (public)    | Public route table with default route (0.0.0.0/0) via IGW                                  |
+| `aws_route_table` (private)   | Private route table with default route (0.0.0.0/0) via IGW                                 |
+| `aws_route_table_association` | Associates public and private subnets with their respective route tables                   |
+
+#### Configuration Variables
+
+| Variable                | Type         | Description                                       |
+| ----------------------- | ------------ | ------------------------------------------------- |
+| `project_name`          | string       | The name of the project (used in resource naming) |
+| `environment`           | string       | The environment name (dev/staging/prod)           |
+| `manage_by`             | string       | The entity responsible for managing resources     |
+| `vpc_cidr`              | string       | The CIDR block for the VPC (e.g., `10.0.0.0/16`)  |
+| `enable_dns_hostnames`  | bool         | Whether to enable DNS hostnames (default: `true`) |
+| `enable_dns_support`    | bool         | Whether to enable DNS support (default: `true`)   |
+| `availability_zones`    | list(string) | List of availability zones for subnet placement   |
+| `public_subnets_cidrs`  | list(string) | CIDR blocks for public subnets                    |
+| `private_subnets_cidrs` | list(string) | CIDR blocks for private subnets                   |
+
+#### Outputs
+
+| Output                    | Description                         |
+| ------------------------- | ----------------------------------- |
+| `main_vpc_id`             | The ID of the created VPC           |
+| `main_public_subnet_ids`  | List of IDs for all public subnets  |
+| `main_private_subnet_ids` | List of IDs for all private subnets |
+
+#### Security Considerations
+
+- **CIDR Range Selection**: Ensure the VPC CIDR does not overlap with any existing networks (on-premises VPN, other VPCs, etc.)
+- **Public Subnet Access**: Resources in public subnets are directly accessible from the internet. Only place load balancers, NAT gateways, or bastion hosts in public subnets.
+- **Private Subnet Isolation**: Resources in private subnets cannot be accessed directly from the internet.
+- **Availability Zones**: For high availability, distribute subnets across multiple AZs (recommended: 3 for production).
 
 ---
 
@@ -196,14 +259,14 @@ EC2 instance configuration.
 
 EKS cluster, OIDC identity provider, and managed node groups (on-demand + spot).
 
-| Resource                                 | Condition Variable           | Description                                             |
-| ---------------------------------------- | ---------------------------- | ------------------------------------------------------- |
-| `data.tls_certificate.eks_cert`          | `is_eks_cluster_enabled`     | Fetches TLS thumbprint for OIDC provider registration   |
-| `aws_eks_cluster.eks`                    | `is_eks_cluster_enabled`     | EKS control plane with configurable Kubernetes version  |
-| `aws_iam_openid_connect_provider`        | `is_eks_cluster_enabled`     | OIDC identity provider derived from cluster issuer      |
-| `aws_eks_node_group.ondemand-node`       | `is_eks_node_group_enabled`  | On-demand managed node group with configurable scaling  |
-| `aws_eks_node_group.spot-node`           | `is_eks_node_group_enabled`  | Spot managed node group with configurable scaling       |
-| `aws_eks_addon.eks-addons` (for_each)    | `is_eks_addons_enabled`      | EKS add-ons (CoreDNS, kube-proxy, vpc-cni, etc.)        |
+| Resource                              | Condition Variable          | Description                                            |
+| ------------------------------------- | --------------------------- | ------------------------------------------------------ |
+| `data.tls_certificate.eks_cert`       | `is_eks_cluster_enabled`    | Fetches TLS thumbprint for OIDC provider registration  |
+| `aws_eks_cluster.eks`                 | `is_eks_cluster_enabled`    | EKS control plane with configurable Kubernetes version |
+| `aws_iam_openid_connect_provider`     | `is_eks_cluster_enabled`    | OIDC identity provider derived from cluster issuer     |
+| `aws_eks_node_group.ondemand-node`    | `is_eks_node_group_enabled` | On-demand managed node group with configurable scaling |
+| `aws_eks_node_group.spot-node`        | `is_eks_node_group_enabled` | Spot managed node group with configurable scaling      |
+| `aws_eks_addon.eks-addons` (for_each) | `is_eks_addons_enabled`     | EKS add-ons (CoreDNS, kube-proxy, vpc-cni, etc.)       |
 
 **Key Variables**:
 

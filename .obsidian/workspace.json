@@ -11,24 +11,12 @@
             "id": "19ac471caa0c1888",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "pdf",
               "state": {
-                "file": "docs/RUNBOOK.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": true,
-                "backlinkOpts": {
-                  "collapseAll": false,
-                  "extraContext": false,
-                  "sortOrder": "alphabetical",
-                  "showSearch": false,
-                  "searchQuery": "",
-                  "backlinkCollapsed": false,
-                  "unlinkedCollapsed": true
-                }
+                "file": "docs/Finishline_Infra_Project_Assignment.pdf"
               },
-              "icon": "lucide-file",
-              "title": "RUNBOOK"
+              "icon": "lucide-file-text",
+              "title": "Finishline_Infra_Project_Assignment"
             }
           }
         ]
@@ -88,8 +76,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 253.5,
-    "collapsed": true
+    "width": 253.5
   },
   "right": {
     "id": "51d6d30a61d0a3b2",
@@ -216,11 +203,11 @@
   },
   "active": "19ac471caa0c1888",
   "lastOpenFiles": [
-    "terraform/environments/dev/plan.json",
-    "checkov-results.xml",
     "README.md",
     "docs/RUNBOOK.md",
     "docs/TROUBLESHOOT.md",
+    "terraform/environments/dev/plan.json",
+    "checkov-results.xml",
     "terraform/modules/bootstrap/version.tf",
     "docs/Finishline_Infra_Project_Assignment.pdf",
     "terraform/environments/dev/finishline-key-pair.pem",
@@ -230,7 +217,6 @@
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/config.json",
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/devops_tools.sh",
     "00-career-mastery/14-Interview-Questions/InvestFlow-Questions-2.md",
-    "Finishline_Infra_Project_Assignment (1).pdf",
     "01-beginner/99-supplemental-content/03-phase-3/01-ci-cd-foundations/reference/artifact-registry-governance-ref.md",
     "00-career-mastery/14-Interview-Questions/InvetFlow-Questions-3.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/README.md",
