@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README.md",
+                "file": "docs/RUNBOOK.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": true,
@@ -28,7 +28,7 @@
                 }
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "RUNBOOK"
             }
           }
         ]
@@ -216,9 +216,13 @@
   },
   "active": "19ac471caa0c1888",
   "lastOpenFiles": [
+    "terraform/environments/dev/plan.json",
+    "checkov-results.xml",
+    "README.md",
     "docs/RUNBOOK.md",
-    "docs/Finishline_Infra_Project_Assignment.pdf",
     "docs/TROUBLESHOOT.md",
+    "terraform/modules/bootstrap/version.tf",
+    "docs/Finishline_Infra_Project_Assignment.pdf",
     "terraform/environments/dev/finishline-key-pair.pem",
     "terraform/environments/dev/tfplan",
     "terraform/environments/dev/version.tf",
@@ -227,8 +231,6 @@
     "01-beginner/03-windows-basics/part-2-wsl-linux-integration/devops_tools.sh",
     "00-career-mastery/14-Interview-Questions/InvestFlow-Questions-2.md",
     "Finishline_Infra_Project_Assignment (1).pdf",
-    "Finishline_Infra_Project_Assignment.pdf",
-    "00-career-mastery/14-Interview-Questions/flashcards.csv",
     "01-beginner/99-supplemental-content/03-phase-3/01-ci-cd-foundations/reference/artifact-registry-governance-ref.md",
     "00-career-mastery/14-Interview-Questions/InvetFlow-Questions-3.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/terraform/modules/vpc/networking/README.md",
@@ -250,7 +252,6 @@
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/docs/PORT_SUMMARY.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/docs/PORT_CONFIGURATION.md",
     "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/docs/JAVA21_MIGRATION.md",
-    "05-labs/play-ground/microservices/spms-project-1/spring-petclinic-microservices/docs/DEPLOYMENT_CHECKLIST.md",
     "02-intermediate/05-Foundational-Containers/images/dockerstates.png",
     "02-intermediate/05-Foundational-Containers/images/dockerarch.png",
     "01-beginner/05-Foundational-Containers/images/dockerstates.png",

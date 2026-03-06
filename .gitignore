@@ -43,3 +43,9 @@ terraform.rc
 .pem
 *.key
 .key
+tfplan
+
+checkov-result.xml
+plan.json
+
+# 

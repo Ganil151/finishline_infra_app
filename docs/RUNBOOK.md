@@ -275,7 +275,7 @@ cluster_name              = "finishline-eks-cluster"
 is_eks_cluster_enabled    = true
 is_eks_node_group_enabled = true
 is_eks_addons_enabled     = true
-cluster_version           = "1.29"   # must be >= 1.29 with AWS provider 6.x
+cluster_version           = "1.35"   # must be >= 1.35 with AWS provider 6.x
 endpoint_private_access   = true
 endpoint_public_access    = false
 cluster_enabled_log_types = ["api", "audit", "authenticator"]
@@ -985,22 +985,23 @@ This can happen with `random_integer` resources on re-plan if the seed changes. 
 
 ## 12. Security Checklist
 
-| #   | Check                                                               | Status                                    |
-| --- | ------------------------------------------------------------------- | ----------------------------------------- |
+| #   | Check                                                               | Status                                   |
+| --- | ------------------------------------------------------------------- | ---------------------------------------- |
 | 1   | S3 state bucket has versioning enabled                              | ✅                                        |
 | 2   | S3 state bucket has SSE encryption enabled                          | ✅                                        |
 | 3   | S3 state bucket blocks all public access                            | ✅                                        |
 | 4   | State locking is enabled (`use_lockfile = true`)                    | ✅                                        |
 | 5   | `.pem` private key file is excluded from git (`.gitignore`)         | ✅                                        |
-| 6   | `terraform.tfvars` is excluded from git                             | ⚠️ Verify `.gitignore`                    |
+| 6   | `terraform.tfvars` is excluded from git                             | ⚠️ Verify `.gitignore`                   |
 | 7   | IAM policies follow least-privilege (no `*` resources)              | ✅ (fixed in IAM module)                  |
 | 8   | OIDC policy scoped to specific S3 bucket via `s3_bucket_arn`        | ✅                                        |
-| 9   | EC2 SSH ingress restricted to known CIDRs in prod                   | ⚠️ Review SG rules                        |
-| 10  | Private subnets do not have a direct route to IGW                   | ⚠️ Review VPC private route table         |
+| 9   | EC2 SSH ingress restricted to known CIDRs in prod                   | ⚠️ Review SG rules                       |
+| 10  | Private subnets do not have a direct route to IGW                   | ⚠️ Review VPC private route table        |
 | 11  | EKS node group does not use `AdministratorAccess` policy            | ✅ (uses scoped AWS managed policies)     |
 | 12  | OIDC thumbprint derived from live TLS cert (`data.tls_certificate`) | ✅ (EKS module uses data source)          |
 | 13  | EKS API endpoint public access disabled in dev/prod                 | ✅ (`endpoint_public_access = false`)     |
 | 14  | EKS Auto Mode explicitly disabled (managed node groups used)        | ✅ (`compute_config { enabled = false }`) |
-| 15  | EKS cluster version ≥ 1.29 for AWS provider 6.x compatibility       | ✅ (`cluster_version = "1.29"`)           |
+| 15  | EKS cluster version ≥ 1.35 for AWS provider 6.x compatibility       | ✅ (`cluster_version = "1.35"`)           |
+|     |                                                                     |                                          |
 
 > ⚠️ Items: ensure `terraform.tfvars` is listed in `.gitignore`, restrict SSH CIDR in production ingress rules, and verify the private route table does not route directly through the IGW (currently it does — consider adding a NAT Gateway for production environments).

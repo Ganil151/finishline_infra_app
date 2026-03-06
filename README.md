@@ -207,18 +207,18 @@ EKS cluster, OIDC identity provider, and managed node groups (on-demand + spot).
 
 **Key Variables**:
 
-| Variable                   | Type         | Description                                                  |
-| -------------------------- | ------------ | ------------------------------------------------------------ |
-| `cluster_name`             | string       | EKS cluster name                                             |
-| `cluster_version`          | string       | Kubernetes version (≥ 1.29 required for AWS provider 6.x)   |
-| `cluster_role_arn`         | string       | ARN of the EKS control-plane IAM role (from `secret/iam`)   |
-| `node_role_arn`            | string       | ARN of the EC2 node group IAM role (from `secret/iam`)       |
-| `subnet_ids`               | list(string) | Private subnet IDs for cluster and node placement            |
-| `security_group_ids`       | list(string) | Additional security group IDs attached to the cluster        |
-| `endpoint_private_access`  | bool         | Enable private API endpoint access                           |
-| `endpoint_public_access`   | bool         | Enable public API endpoint access                            |
-| `cluster_enabled_log_types`| list(string) | Control plane logs: api, audit, authenticator, etc.          |
-| `addons`                   | map(any)     | Add-on name → `{ version, service_account_role_arn? }`       |
+| Variable                    | Type         | Description                                               |
+| --------------------------- | ------------ | --------------------------------------------------------- |
+| `cluster_name`              | string       | EKS cluster name                                          |
+| `cluster_version`           | string       | Kubernetes version (≥ 1.35 required for AWS provider 6.x) |
+| `cluster_role_arn`          | string       | ARN of the EKS control-plane IAM role (from `secret/iam`) |
+| `node_role_arn`             | string       | ARN of the EC2 node group IAM role (from `secret/iam`)    |
+| `subnet_ids`                | list(string) | Private subnet IDs for cluster and node placement         |
+| `security_group_ids`        | list(string) | Additional security group IDs attached to the cluster     |
+| `endpoint_private_access`   | bool         | Enable private API endpoint access                        |
+| `endpoint_public_access`    | bool         | Enable public API endpoint access                         |
+| `cluster_enabled_log_types` | list(string) | Control plane logs: api, audit, authenticator, etc.       |
+| `addons`                    | map(any)     | Add-on name → `{ version, service_account_role_arn? }`    |
 
 **Outputs**: `cluster_id`, `cluster_arn`, `cluster_endpoint`, `cluster_version`, `cluster_certificate_authority_data`, `cluster_security_group_id`, `cluster_oidc_issuer`, `cluster_oidc_provider_arn`, `ondemand_node_group_id`, `ondemand_node_group_arn`, `spot_node_group_id`, `spot_node_group_arn`
 

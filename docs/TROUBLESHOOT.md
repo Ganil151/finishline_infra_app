@@ -383,7 +383,7 @@ The security group module allows all outbound traffic by default. This is intent
 
 ## 10. EKS Cluster Errors
 
-### Error: `InvalidParameterException: EKS Auto Mode is only supported for cluster version 1.29 or above`
+### Error: `InvalidParameterException: EKS Auto Mode is only supported for cluster version 1.35 or above`
 
 ```
 Error: creating EKS Cluster (...): InvalidParameterException:
