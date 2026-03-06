@@ -74,6 +74,13 @@
     - [`Error: creating IAM Role: EntityAlreadyExists`](#error-creating-iam-role-entityalreadyexists)
     - [`terraform plan` shows unexpected changes after no code change](#terraform-plan-shows-unexpected-changes-after-no-code-change)
   - [12. Security Checklist](#12-security-checklist)
+  - [13. Cost Center Configuration](#13-cost-center-configuration)
+    - [13.1 Overview](#131-overview)
+    - [13.2 Cost Center Values by Environment](#132-cost-center-values-by-environment)
+    - [13.3 Configuring Cost Centers](#133-configuring-cost-centers)
+    - [13.4 AWS Cost Explorer Setup](#134-aws-cost-explorer-setup)
+    - [13.5 Resources Tagged with CostCenter](#135-resources-tagged-with-costcenter)
+    - [13.6 Customizing Cost Centers](#136-customizing-cost-centers)
 
 ---
 
@@ -1121,3 +1128,94 @@ This can happen with `random_integer` resources on re-plan if the seed changes. 
 |     |                                                                     |                                           |
 
 > ⚠️ Items: ensure `terraform.tfvars` is listed in `.gitignore`, restrict SSH CIDR in production ingress rules, and verify the private route table does not route directly through the IGW (currently it does — consider adding a NAT Gateway for production environments).
+
+## 13. Cost Center Configuration
+
+### 13.1 Overview
+
+The infrastructure uses AWS tags to enable cost allocation and tracking via AWS Cost Explorer. All resources are tagged with a `CostCenter` tag that allows you to attribute costs to specific business units, projects, or environments.
+
+### 13.2 Cost Center Values by Environment
+
+| Environment | Cost Center Code | Description             |
+| ----------- | ---------------- | ----------------------- |
+| dev         | FIN-001          | Development and testing |
+| staging     | FIN-002          | Staging/QA environment  |
+| prod        | FIN-003          | Production environment  |
+
+### 13.3 Configuring Cost Centers
+
+Cost centers are configured in each environment's `terraform.tfvars` file:
+
+```hcl
+# In terraform/environments/dev/terraform.tfvars
+cost_center = "FIN-001"
+
+# In terraform/environments/staging/terraform.tfvars
+cost_center = "FIN-002"
+
+# In terraform/environments/prod/terraform.tfvars
+cost_center = "FIN-003"
+```
+
+### 13.4 AWS Cost Explorer Setup
+
+To enable cost tracking by Cost Center tag in AWS:
+
+1. **Enable Cost Allocation Tags in AWS Console:**
+   - Go to AWS Console → Cost Explorer → Cost Categories
+   - Or navigate to: https://console.aws.amazon.com/cost-management/home#/cost-categories
+   - Click "Create cost category"
+   - Choose "Tag" as the dimension
+   - Select the `CostCenter` tag key
+   - Add your cost center values (FIN-001, FIN-002, FIN-003)
+
+2. **Via AWS CLI:**
+
+   ```bash
+   # Enable the CostCenter tag for cost allocation
+   aws ce enable-_cost-allocation-tags --cost-allocation-tags CostCenter
+   ```
+
+3. **View Costs by Cost Center:**
+   ```bash
+   # Get costs by CostCenter tag for the current month
+   aws ce get-cost-and-usage \
+     --time-period Start=$(date -d "$(date +%Y-%m-01)" +%Y-%m-%d),End=$(date -d "$(date -d "$(date +%Y-%m-01) +1 month" +%Y-%m-01)" +%Y-%m-%d) \
+     --granularity MONTHLY \
+     --metrics UnblendedCost \
+     --group-by Type=TAG,Key=CostCenter
+   ```
+
+### 13.5 Resources Tagged with CostCenter
+
+The following resources are tagged with the `CostCenter` tag:
+
+- VPC and subnets
+- Internet Gateway
+- Elastic IPs
+- Route Tables
+- Security Groups
+- EC2 Instances (including Jump Host)
+- EKS Cluster and Node Groups
+- Key Pairs
+
+### 13.6 Customizing Cost Centers
+
+To add a new cost center:
+
+1. Update the `cost_center` value in the appropriate `terraform.tfvars`:
+
+   ```hcl
+   cost_center = "FIN-004"  # Add new cost center code
+   ```
+
+2. Run terraform plan and apply:
+
+   ```bash
+   cd terraform/environments/<env>
+   terraform plan -out=tfplan
+   terraform apply tfplan
+   ```
+
+3. Enable the new cost center in AWS Cost Explorer (if not automatically detected)
