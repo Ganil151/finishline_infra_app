@@ -48,10 +48,11 @@ resource "aws_eks_cluster" "eks" {
   }
 
   tags = {
-    Name         = var.cluster_name
-    environment  = var.environment
-    project_name = var.project_name
-    manage_by    = var.manage_by
+    Name        = var.cluster_name
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = var.manage_by
+    Terraform   = "true"
   }
 }
 
@@ -65,18 +66,26 @@ resource "aws_iam_openid_connect_provider" "eks_oidc_provider" {
   url             = aws_eks_cluster.eks[0].identity[0].oidc[0].issuer
 
   tags = {
-    Name         = "${var.cluster_name}-oidc-provider"
-    environment  = var.environment
-    project_name = var.project_name
-    manage_by    = var.manage_by
+    Name        = "${var.cluster_name}-oidc-provider"
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = var.manage_by
+    Terraform   = "true"
   }
+
+  lifecycle {
+    # Ignore changes to allow re-running without destroying the existing provider
+    ignore_changes = [thumbprint_list]
+  }
+
+  depends_on = [aws_eks_cluster.eks]
 }
 
 ##############################################
 # On-Demand Node Group
 ##############################################
 resource "aws_eks_node_group" "ondemand-node" {
-  count           = var.is_eks_node_group_enabled ? 1 : 0
+  count           = (var.is_eks_cluster_enabled && var.is_eks_node_group_enabled) ? 1 : 0
   cluster_name    = aws_eks_cluster.eks[0].name
   node_group_name = "${var.cluster_name}-ondemand-nodes"
   node_role_arn   = var.node_role_arn
@@ -101,9 +110,10 @@ resource "aws_eks_node_group" "ondemand-node" {
 
   tags = {
     Name                                        = "${var.cluster_name}-ondemand-nodes"
-    environment                                 = var.environment
-    project_name                                = var.project_name
-    manage_by                                   = var.manage_by
+    Project                                     = var.project_name
+    Environment                                 = var.environment
+    ManagedBy                                   = var.manage_by
+    Terraform                                   = "true"
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 
@@ -114,7 +124,7 @@ resource "aws_eks_node_group" "ondemand-node" {
 # Spot Node Group
 ##############################################
 resource "aws_eks_node_group" "spot-node" {
-  count           = var.is_eks_node_group_enabled ? 1 : 0
+  count           = (var.is_eks_cluster_enabled && var.is_eks_node_group_enabled) ? 1 : 0
   cluster_name    = aws_eks_cluster.eks[0].name
   node_group_name = "${var.cluster_name}-spot-nodes"
   node_role_arn   = var.node_role_arn
@@ -142,9 +152,10 @@ resource "aws_eks_node_group" "spot-node" {
 
   tags = {
     Name                                        = "${var.cluster_name}-spot-nodes"
-    environment                                 = var.environment
-    project_name                                = var.project_name
-    manage_by                                   = var.manage_by
+    Project                                     = var.project_name
+    Environment                                 = var.environment
+    ManagedBy                                   = var.manage_by
+    Terraform                                   = "true"
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 

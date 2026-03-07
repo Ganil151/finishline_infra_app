@@ -2,6 +2,30 @@
 # Finishline Infra Jump Host
 #======================================================
 
+# Include Security Group Module
+module "security_group" {
+  source = "../security_group"
+
+  project_name        = var.project_name
+  environment         = var.environment
+  manage_by           = var.manage_by
+  vpc_id              = var.vpc_id
+  security_group_name = "${var.project_name}-ec2-sg"
+  ingress_rules       = var.ingress_rules
+  egress_rules        = var.egress_rules
+}
+
+# Include Key Pair Module
+module "key_pair" {
+  source = "../secret/key_pair"
+
+  project_name    = var.project_name
+  environment     = var.environment
+  manage_by       = var.manage_by
+  key_name        = var.key_pair_name
+  create_key_pair = var.create_key_pair
+}
+
 data "aws_ami" "amazon_linux_2" {
   most_recent = true
   owners      = ["amazon"]
@@ -21,8 +45,8 @@ resource "aws_instance" "jump_host" {
   ami                    = var.ami_id == "" ? data.aws_ami.amazon_linux_2.id : var.ami_id
   instance_type          = var.jump_host_instance_type
   subnet_id              = var.public_subnet_ids[0]
-  vpc_security_group_ids = [var.finishline_sg_id]
-  key_name               = var.key_pair_name
+  vpc_security_group_ids = [module.security_group.finishline_sg_id]
+  key_name               = module.key_pair.key_name
 
   root_block_device {
     volume_size           = var.root_volume_size
@@ -43,6 +67,7 @@ resource "aws_instance" "jump_host" {
     ManagedBy   = var.manage_by
     Tier        = "Management"
     CostCenter  = var.cost_center
+    Terraform   = "true"
   }, var.tags)
 
 }
@@ -52,7 +77,11 @@ resource "aws_eip" "jump_host" {
   domain   = "vpc"
 
   tags = merge({
-    Name = "${var.project_name}-${var.environment}-jump-host-eip"
+    Name        = "${var.project_name}-${var.environment}-jump-host-eip"
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = var.manage_by
+    Terraform   = "true"
   }, var.tags)
 
 

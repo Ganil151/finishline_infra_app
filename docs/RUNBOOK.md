@@ -639,7 +639,7 @@ After destroy, the state file in S3 will contain an empty state. The S3 bucket i
 | ----------------------- | ------------ | ---------------------------------- |
 | `project_name`          | string       | Used in resource naming and tags   |
 | `environment`           | string       | Used in resource naming and tags   |
-| `manage_by`             | string       | `ManageBy` tag value               |
+| `manage_by`             | string       | `ManagedBy` tag value               |
 | `vpc_cidr`              | string       | VPC CIDR block, e.g. `10.0.0.0/16` |
 | `availability_zones`    | list(string) | AZs for subnet distribution        |
 | `public_subnets_cidrs`  | list(string) | CIDR blocks for public subnets     |
@@ -660,7 +660,7 @@ After destroy, the state file in S3 will contain an empty state. The S3 bucket i
 | `project_name`        | string       | Used in tags            |
 | `environment`         | string       | Used in tags            |
 | `vpc_id`              | string       | VPC to attach the SG to |
-| `manage_by`           | string       | `ManageBy` tag value    |
+| `manage_by`           | string       | `ManagedBy` tag value    |
 | `security_group_name` | string       | SG name                 |
 | `ingress_rules`       | list(object) | List of inbound rules   |
 | `egress_rules`        | list(object) | List of outbound rules  |

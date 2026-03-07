@@ -21,11 +21,13 @@ variable "cluster_name" {
 variable "cluster_role_arn" {
   description = "The ARN of the IAM role for the EKS cluster control plane"
   type        = string
+  default     = null
 }
 
 variable "node_role_arn" {
   description = "The ARN of the IAM role for the EKS node groups"
   type        = string
+  default     = null
 }
 
 variable "subnet_ids" {

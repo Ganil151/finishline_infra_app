@@ -72,7 +72,7 @@ resource "aws_iam_role_policy_attachment" "node-policies" {
 # (Created AFTER Cluster is up)
 #######################
 resource "aws_iam_openid_connect_provider" "eks-oidc-provider" {
-  count           = var.is_eks_cluster_enabled ? 1 : 0
+  count           = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
   url             = var.eks_oidc_url
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = var.oidc_thumbprint
@@ -83,8 +83,8 @@ resource "aws_iam_openid_connect_provider" "eks-oidc-provider" {
 # (Created AFTER Cluster is up)
 #######################
 data "aws_iam_policy_document" "eks_oidc_assume_role_policy" {
-  # We use count 0/1 here to prevent evaluation errors if cluster is off
-  count = var.is_eks_cluster_enabled ? 1 : 0
+  # We use count 0/1 here to prevent evaluation errors if cluster is off or OIDC URL is empty
+  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -104,13 +104,13 @@ data "aws_iam_policy_document" "eks_oidc_assume_role_policy" {
 }
 
 resource "aws_iam_role" "eks_oidc" {
-  count              = var.is_eks_cluster_enabled ? 1 : 0
-  assume_role_policy = data.aws_iam_policy_document.eks_oidc_assume_role_policy[0].json
+  count              = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  assume_role_policy = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? data.aws_iam_policy_document.eks_oidc_assume_role_policy[0].json : ""
   name               = "${local.cluster_name}-oidc-role"
 }
 
 resource "aws_iam_policy" "eks-oidc-policy" {
-  count = var.is_eks_cluster_enabled ? 1 : 0
+  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
   name  = "${local.cluster_name}-oidc-policy"
 
   policy = jsonencode({
@@ -139,7 +139,7 @@ resource "aws_iam_policy" "eks-oidc-policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "eks-oidc-policy-attach" {
-  count      = var.is_eks_cluster_enabled ? 1 : 0
-  role       = aws_iam_role.eks_oidc[0].name
-  policy_arn = aws_iam_policy.eks-oidc-policy[0].arn
+  count      = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  role       = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? aws_iam_role.eks_oidc[0].name : ""
+  policy_arn = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? aws_iam_policy.eks-oidc-policy[0].arn : ""
 }

@@ -100,6 +100,12 @@ variable "key_name" {
   type        = string
 }
 
+variable "create_key_pair" {
+  description = "Whether to create a new key pair or use an existing one"
+  type        = bool
+  default     = true
+}
+
 #================================================================
 # Variables for IAM
 #================================================================
@@ -221,18 +227,21 @@ variable "jump_host_instance_type" {
 }
 
 variable "public_subnet_ids" {
-  description = "List of public subnet IDs for the EC2 instance"
+  description = "List of public subnet IDs for the EC2 instance (deprecated - now uses VPC module output)"
   type        = list(string)
+  default     = []
 }
 
 variable "finishline_sg_id" {
-  description = "The security group ID to attach to the EC2 instance"
+  description = "The security group ID to attach to the EC2 instance (deprecated - EC2 module creates its own)"
   type        = string
+  default     = ""
 }
 
 variable "key_pair_name" {
-  description = "The key pair name for the EC2 instance"
+  description = "The key pair name for the EC2 instance (deprecated - uses key_name variable)"
   type        = string
+  default     = ""
 }
 
 variable "root_volume_size" {

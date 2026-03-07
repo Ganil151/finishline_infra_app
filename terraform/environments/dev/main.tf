@@ -36,18 +36,41 @@ module "finishline_sg" {
 module "key_pair" {
   source = "../../modules/secret/key_pair"
 
-  project_name = var.project_name
-  environment  = var.environment
-  manage_by    = var.manage_by
-  key_name     = var.key_name
+  project_name    = var.project_name
+  environment     = var.environment
+  manage_by       = var.manage_by
+  key_name        = var.key_name
+  create_key_pair = var.create_key_pair
+}
+
+##############################################
+# EC2 Jump Host Module
+##############################################
+module "jump_host" {
+  source = "../../modules/ec2"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  manage_by               = var.manage_by
+  vpc_id                  = module.vpc.main_vpc_id
+  public_subnet_ids       = module.vpc.main_public_subnet_ids
+  ami_id                  = var.ami_id
+  jump_host_instance_type = var.jump_host_instance_type
+  key_pair_name           = var.key_name
+  create_key_pair         = var.create_key_pair
+  root_volume_size        = var.root_volume_size
+  enable_monitoring       = var.enable_monitoring
+  user_data_base64        = var.user_data_base64
+  component               = var.ec2_component
+  cost_center             = var.cost_center
+  tags                    = var.ec2_tags
 }
 
 ##############################################
 # IAM Module
-# Creates EKS cluster role, node group role,
-# and OIDC identity provider + role/policy.
-# The OIDC resources depend on the EKS cluster
-# OIDC issuer URL resolved at apply time.
+# Creates EKS cluster role and node group role.
+# Must be declared BEFORE EKS module since EKS cluster depends on IAM role.
+# Note: OIDC provider is created separately after EKS cluster is ready.
 ##############################################
 module "iam" {
   source = "../../modules/secret/iam"
@@ -57,21 +80,20 @@ module "iam" {
   is_eks_nodegroup_role_enabled = var.is_eks_nodegroup_role_enabled
   is_eks_cluster_enabled        = var.is_eks_cluster_enabled
 
-  # Pass OIDC issuer URL from EKS module for OIDC provider creation
-  eks_oidc_url = module.eks.cluster_oidc_issuer != null ? module.eks.cluster_oidc_issuer : ""
+  # Pass empty string initially; OIDC provider will be created separately
+  eks_oidc_url = ""
 }
 
 ##############################################
 # EKS Module
-# Uses IAM role ARNs from the IAM module.
+# Must be declared after IAM module since it requires IAM role ARNs
 ##############################################
 module "eks" {
   source = "../../modules/eks"
 
-  project_name = var.project_name
-  environment  = var.environment
-  manage_by    = var.manage_by
-
+  project_name              = var.project_name
+  environment               = var.environment
+  manage_by                 = var.manage_by
   cluster_name              = var.cluster_name
   cluster_version           = var.cluster_version
   is_eks_cluster_enabled    = var.is_eks_cluster_enabled

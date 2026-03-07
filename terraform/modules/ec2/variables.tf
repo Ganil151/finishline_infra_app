@@ -13,6 +13,11 @@ variable "manage_by" {
   type        = string
 }
 
+variable "vpc_id" {
+  description = "The ID of the VPC"
+  type        = string
+}
+
 variable "ami_id" {
   description = "The AMI ID to use for the EC2 instance. If empty, will use the latest Amazon Linux 2 AMI"
   type        = string
@@ -30,14 +35,53 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "ingress_rules" {
+  description = "The ingress rules for the security group"
+  type = list(object({
+    description = string
+    from_port   = number
+    to_port     = number
+    protocol    = string
+    cidr_blocks = list(string)
+  }))
+  default = [
+    {
+      description = "SSH from anywhere"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
+}
+
+variable "egress_rules" {
+  description = "The egress rules for the security group"
+  type = list(object({
+    description = string
+    from_port   = number
+    to_port     = number
+    protocol    = string
+    cidr_blocks = list(string)
+  }))
+  default = []
+}
+
 variable "finishline_sg_id" {
-  description = "The security group ID to attach to the EC2 instance"
+  description = "(Deprecated) The security group ID to attach to the EC2 instance - now managed internally"
   type        = string
+  default     = ""
 }
 
 variable "key_pair_name" {
   description = "The key pair name for the EC2 instance"
   type        = string
+}
+
+variable "create_key_pair" {
+  description = "Whether to create a new key pair or use an existing one"
+  type        = bool
+  default     = true
 }
 
 variable "root_volume_size" {

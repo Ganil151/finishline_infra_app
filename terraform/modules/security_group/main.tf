@@ -27,8 +27,15 @@ resource "aws_security_group" "finishline_sg" {
     Name        = "finishline_sg_${var.project_name}"
     Project     = var.project_name
     Environment = var.environment
-    ManageBy    = var.manage_by
+    ManagedBy   = var.manage_by
     Terraform   = "true"
+  }
+
+  lifecycle {
+    # Prevent accidental security group deletion
+    prevent_destroy = true
+    # Ignore changes to ingress/egress rules that might be modified outside Terraform
+    ignore_changes = [ingress, egress]
   }
 
 }

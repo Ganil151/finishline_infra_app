@@ -4,8 +4,8 @@ resource "aws_vpc" "finishline_vpc" {
   enable_dns_support   = var.enable_dns_support
 
   tags = {
-    Name     = "${var.project_name}-${var.environment}-vpc"
-    ManageBy = "${var.manage_by}"
+    Name      = "${var.project_name}-${var.environment}-vpc"
+    ManagedBy = "${var.manage_by}"
   }
 }
 
@@ -13,8 +13,8 @@ resource "aws_internet_gateway" "finishline_igw" {
   vpc_id = aws_vpc.finishline_vpc.id
 
   tags = {
-    Name     = "${var.project_name}-${var.environment}-igw"
-    ManageBy = "${var.manage_by}"
+    Name      = "${var.project_name}-${var.environment}-igw"
+    ManagedBy = "${var.manage_by}"
   }
 }
 
@@ -27,21 +27,22 @@ resource "aws_subnet" "finishline_public_subnet" {
 
   tags = {
     Name                                                           = "${var.project_name}-${var.environment}-public-${count.index + 1}"
-    ManageBy                                                       = "${var.manage_by}"
+    ManagedBy                                                      = "${var.manage_by}"
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "owned"
 
   }
 }
 
 resource "aws_subnet" "finishline_private_subnet" {
-  count             = length(var.private_subnets_cidrs)
-  vpc_id            = aws_vpc.finishline_vpc.id
-  cidr_block        = var.private_subnets_cidrs[count.index]
-  availability_zone = var.availability_zones[count.index]
+  count                   = length(var.private_subnets_cidrs)
+  vpc_id                  = aws_vpc.finishline_vpc.id
+  cidr_block              = var.private_subnets_cidrs[count.index]
+  availability_zone       = var.availability_zones[count.index]
+  map_public_ip_on_launch = true
 
   tags = {
     Name                                                           = "${var.project_name}-${var.environment}-private-${count.index + 1}"
-    ManageBy                                                       = "${var.manage_by}"
+    ManagedBy                                                      = "${var.manage_by}"
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "owned"
   }
 }
@@ -50,8 +51,8 @@ resource "aws_eip" "finishline_eip" {
   domain = "vpc"
 
   tags = {
-    Name     = "${var.project_name}-${var.environment}-eip"
-    ManageBy = "${var.manage_by}"
+    Name      = "${var.project_name}-${var.environment}-eip"
+    ManagedBy = "${var.manage_by}"
   }
 
 }
@@ -63,8 +64,8 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.finishline_igw.id
   }
   tags = {
-    Name     = "${var.project_name}-public-rt"
-    ManageBy = "${var.manage_by}"
+    Name      = "${var.project_name}-public-rt"
+    ManagedBy = "${var.manage_by}"
   }
 }
 
@@ -81,8 +82,8 @@ resource "aws_route_table" "private" {
     gateway_id = aws_internet_gateway.finishline_igw.id
   }
   tags = {
-    Name     = "${var.project_name}-private-rt"
-    ManageBy = "${var.manage_by}"
+    Name      = "${var.project_name}-private-rt"
+    ManagedBy = "${var.manage_by}"
   }
 }
 

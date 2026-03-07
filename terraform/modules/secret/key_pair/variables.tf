@@ -18,3 +18,9 @@ variable "key_name" {
   type        = string
 }
 
+variable "create_key_pair" {
+  description = "Whether to create a new key pair or use an existing one"
+  type        = bool
+  default     = true
+}
+
