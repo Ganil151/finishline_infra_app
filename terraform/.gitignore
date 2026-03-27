@@ -43,4 +43,6 @@ terraform.rc
 # See: https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-debug
 terragrunt-debug.tfvars.json
 
-# End of https://www.toptal.com/developers/gitignore/api/terraform,terragrunt
+## Aws Keys Pair
+
+*.pem*
