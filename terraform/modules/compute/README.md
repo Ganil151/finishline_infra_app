@@ -386,32 +386,56 @@ node_group_status                # Node group status
 
 **Path:** [`./karpenter/`](./karpenter/README.md)
 
-**Purpose:** Deploys Karpenter for Kubernetes-native node autoscaling.
+**Purpose:** Deploys Karpenter for Kubernetes-native node autoscaling using `kubectl_manifest` for reliable CRD installation.
 
 **Key Resources:**
 
-| Resource                             | Description                                        |
-| ------------------------------------ | -------------------------------------------------- |
-| `helm_release.karpenter`             | Karpenter controller via OCI chart from ECR        |
-| `kubernetes_manifest.ec2_node_class` | EC2 configuration for Karpenter                    |
-| `kubernetes_manifest.node_pool`      | Node provisioning rules                            |
+| Resource                             | Description                                 |
+| ------------------------------------ | ------------------------------------------- |
+| `kubectl_manifest.karpenter_crds`    | CRDs (EC2NodeClass, NodePool, NodeClaim)    |
+| `helm_release.karpenter`             | Karpenter controller via OCI chart from ECR |
+| `time_sleep.wait_for_karpenter_crds` | 60-second buffer for CRD registration       |
+| `kubectl_manifest.ec2_node_class`    | EC2 configuration for Karpenter             |
+| `kubectl_manifest.node_pool`         | Node provisioning rules                     |
 
 **Helm Chart Source:** `oci://public.ecr.aws/karpenter/karpenter` (version 1.0.8)
 
-**Provider Requirement:** Helm provider >= 3.0 (uses `set` argument syntax instead of `set` blocks). See [known issues](../../docs/RUNBOOK.md#helm-provider-set-block-syntax-error) for migration details.
+**Provider Requirements:**
+
+- Helm provider >= 3.0 (uses `set` argument syntax)
+- kubectl provider >= 1.14 (for `kubectl_manifest` resources)
+- time provider >= 0.9 (for `time_sleep` buffer)
+
+See [known issues](../../docs/RUNBOOK.md#helm-provider-set-block-syntax-error) for migration details.
+
+**CRD Installation Strategy:**
+
+The module uses `kubectl_manifest` instead of `kubernetes_manifest` to avoid plan-time validation errors. CRDs are installed first, followed by a 60-second buffer before applying Karpenter resources.
+
+**Resource Dependency Chain:**
+
+```
+kubectl_manifest.karpenter_crds
+    └── kubectl_manifest.karpenter_crds_nodepool
+        └── kubectl_manifest.karpenter_crds_nodeclaim
+            └── helm_release.karpenter
+                └── time_sleep (60s)
+                    └── kubectl_manifest.ec2_node_class
+                        └── kubectl_manifest.node_pool
+```
 
 **Inputs from Other Modules:**
 
-| Input                             | Source Module  | Description                         |
-| --------------------------------- | -------------- | ----------------------------------- |
-| `cluster_name`                    | compute/eks    | EKS cluster name                    |
-| `cluster_endpoint`                | compute/eks    | EKS API endpoint                    |
-| `cluster_ca_certificate`          | compute/eks    | EKS CA certificate                  |
-| `karpenter_controller_role_arn`   | security/iam   | IAM role ARN for controller (IRSA)  |
-| `karpenter_node_role_name`        | security/iam   | IAM role name for Karpenter nodes   |
-| `karpenter_instance_profile_name` | security/iam   | IAM instance profile for nodes      |
-| `karpenter_subnet_tags`           | networking/vpc | Tags for subnet discovery           |
-| `karpenter_security_group_tags`   | networking/sg  | Tags for SG discovery               |
+| Input                             | Source Module  | Description                        |
+| --------------------------------- | -------------- | ---------------------------------- |
+| `cluster_name`                    | compute/eks    | EKS cluster name                   |
+| `cluster_endpoint`                | compute/eks    | EKS API endpoint                   |
+| `cluster_ca_certificate`          | compute/eks    | EKS CA certificate                 |
+| `karpenter_controller_role_arn`   | security/iam   | IAM role ARN for controller (IRSA) |
+| `karpenter_node_role_name`        | security/iam   | IAM role name for Karpenter nodes  |
+| `karpenter_instance_profile_name` | security/iam   | IAM instance profile for nodes     |
+| `karpenter_subnet_tags`           | networking/vpc | Tags for subnet discovery          |
+| `karpenter_security_group_tags`   | networking/sg  | Tags for SG discovery              |
 
 **Primary Outputs:**
 

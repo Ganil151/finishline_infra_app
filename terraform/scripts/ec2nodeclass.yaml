@@ -1,0 +1,63 @@
+#============================================================
+#  EC2NodeClass - Karpenter EC2 Configuration
+#============================================================
+
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+
+metadata:
+  name: default
+  labels:
+    karpenter.sh/discovery: finishline-infra-app-dev-eks
+
+spec:
+  # AMI family - determines the base AMI and OS configuration
+  # Options: Bottlerocket, AL2, Ubuntu, Custom
+  amiFamily: Bottlerocket
+
+  # IAM role for Karpenter-provisioned nodes
+  # This role must have necessary permissions for EKS worker nodes
+  role: finishline-infra-app-dev-karpenter-node
+
+  # Subnet selection - Karpenter will choose from matching subnets
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: finishline-infra-app-dev-eks
+
+  # Security group selection - Karpenter will attach matching SGs
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: finishline-infra-app-dev-eks
+
+  # Tags applied to all provisioned EC2 instances
+  tags:
+    karpenter.sh/discovery: finishline-infra-app-dev-eks
+    project: finishline-infra-app
+    environment: dev
+    managed_by: karpenter
+
+  # Block device mappings for EBS volumes
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 50Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+
+  # Metadata options - enforces IMDSv2 for security
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+
+  # Detailed monitoring - enables CloudWatch detailed monitoring
+  # Note: Incurs additional costs
+  detailedMonitoring: false
+
+  # Optional: User data script for node initialization
+  # Uncomment and customize if needed
+  # userData: |
+  #   #!/bin/bash
+  #   echo "Custom node initialization"

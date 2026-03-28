@@ -1,10 +1,10 @@
 # FinishLine Infrastructure Runbook
 
 **Document Owner:** FinishLine Infrastructure Team
-**Last Updated:** March 26, 2026
+**Last Updated:** March 27, 2026
 **Environments:** Dev, Stage, Prod
 **Classification:** Internal Operations
-**Version:** 3.0
+**Version:** 3.1
 
 ---
 
@@ -19,12 +19,17 @@
   - [Required Tools](#required-tools)
   - [AWS Configuration](#aws-configuration)
   - [Clone Repository](#clone-repository)
+- [Pre-Launch Checklist](#pre-launch-checklist)
+  - [Critical Configuration Checks](#critical-configuration-checks)
+  - [Security Hardening Review](#security-hardening-review)
+  - [Environment Readiness](#environment-readiness)
 - [Known Issues and Fixes](#known-issues-and-fixes)
   - [NAT Gateway Availability Mode Error](#nat-gateway-availability-mode-error)
   - [Terragrunt Module Path Issues](#terragrunt-module-path-issues)
   - [Missing Variable Errors](#missing-variable-errors)
   - [Dependency Output Errors](#dependency-output-errors)
   - [Helm Provider set Block Syntax Error](#helm-provider-set-block-syntax-error)
+  - [Karpenter CRD Recognition Error](#karpenter-crd-recognition-error)
 - [Part 1: Networking Deployment](#part-1-networking-deployment)
   - [Step 1: Bootstrap State Backend](#step-1-bootstrap-state-backend)
   - [Step 2: Deploy VPC](#step-2-deploy-vpc)
@@ -195,6 +200,405 @@ aws sts get-caller-identity
 git clone https://github.com/finishline/finishline_infra_app.git
 cd finishline_infra_app/terraform
 ```
+
+---
+
+## Pre-Launch Checklist
+
+**IMPORTANT:** Complete all items in this checklist before deploying to production. This prevents common failures and security misconfigurations identified during the project audit.
+
+### Critical Configuration Checks
+
+#### 1. Populate Missing Terragrunt Configurations
+
+**Status:** 🔴 CRITICAL - Will cause deployment failures
+
+The following files are empty and must be populated before deployment:
+
+**Prod Environment (9 files):**
+
+```bash
+# Navigate to each directory and create terragrunt.hcl
+environments/prod/networking/vpc/terragrunt.hcl
+environments/prod/networking/sg/terragrunt.hcl
+environments/prod/networking/alb/terragrunt.hcl
+environments/prod/security/key_pair/terragrunt.hcl
+environments/prod/compute/jumphost/terragrunt.hcl
+environments/prod/networking/terragrunt.hcl
+environments/prod/security/terragrunt.hcl
+environments/prod/compute/terragrunt.hcl
+environments/prod/security/kms/terragrunt.hcl
+```
+
+**Stage Environment (9 files):**
+
+```bash
+environments/stage/networking/vpc/terragrunt.hcl
+environments/stage/networking/sg/terragrunt.hcl
+environments/stage/networking/alb/terragrunt.hcl
+environments/stage/security/key_pair/terragrunt.hcl
+environments/stage/compute/jumphost/terragrunt.hcl
+environments/stage/networking/terragrunt.hcl
+environments/stage/security/terragrunt.hcl
+environments/stage/compute/terragrunt.hcl
+environments/stage/security/kms/terragrunt.hcl
+```
+
+**Template for VPC (copy and adapt for each environment):**
+
+```bash
+# Reference: environments/dev/networking/vpc/terragrunt.hcl
+cp environments/dev/networking/vpc/terragrunt.hcl environments/prod/networking/vpc/terragrunt.hcl
+
+# Update for prod:
+# - environment = "prod"
+# - vpc_cidr = "10.2.0.0/16"
+# - Update tags accordingly
+```
+
+#### 2. Add Missing Karpenter Controller Role ARN (Prod)
+
+**Status:** 🔴 CRITICAL - Will cause Karpenter deployment failure
+
+File: `environments/prod/compute/karpenter/terragrunt.hcl`
+
+```hcl
+# ADD THIS LINE (currently missing):
+karpenter_controller_role_arn = dependency.iam.outputs.karpenter_controller_role_arn
+```
+
+**Verification:**
+
+```bash
+cd environments/prod/compute/karpenter
+terragrunt plan
+
+# Should NOT show error about missing variable
+```
+
+#### 3. Fix S3 Access Type Validation
+
+**Status:** 🔴 CRITICAL - Validation mismatch
+
+File: `modules/security/iam/variables.tf` (lines 74-79)
+
+**Current (incorrect):**
+
+```hcl
+validation {
+  condition     = contains(["read", "write", "readwrite"], var.s3_access_type)
+  error_message = "s3_access_type must be one of: read, write, or readwrite."
+}
+```
+
+**Fix (add "delete"):**
+
+```hcl
+validation {
+  condition     = contains(["read", "write", "delete", "readwrite"], var.s3_access_type)
+  error_message = "s3_access_type must be one of: read, write, delete, or readwrite."
+}
+```
+
+#### 4. Fix Variable Description (ALB Module)
+
+**Status:** 🔴 CRITICAL - Causes configuration confusion
+
+File: `modules/networking/alb/variables.tf` (line 33)
+
+**Change:**
+
+```hcl
+# FROM:
+description = "CIDR block for the VPC"
+
+# TO:
+description = "ID of the VPC"
+```
+
+#### 5. Add Missing depends_on for OIDC Resources
+
+**Status:** 🔴 CRITICAL - Race condition during apply
+
+File: `modules/security/iam/main.tf`
+
+Add to `aws_iam_role.eks_oidc_role`:
+
+```hcl
+resource "aws_iam_role" "eks_oidc_role" {
+  # ... existing config ...
+
+  depends_on = [aws_iam_openid_connect_provider.eks_oidc_provider]
+}
+```
+
+#### 6. Create KMS Module or Remove References
+
+**Status:** 🔴 CRITICAL - References non-existent module
+
+**Option A: Create KMS module**
+
+```bash
+mkdir -p modules/security/kms
+# Create main.tf, variables.tf, outputs.tf with KMS key resources
+```
+
+**Option B: Remove references from prod/stage configs**
+
+```bash
+# Comment out or remove KMS-related terragrunt.hcl files
+```
+
+---
+
+### Security Hardening Review
+
+#### 1. Restrict SSH Access (NACL Rules)
+
+**Status:** 🟠 HIGH - SSH open to internet
+
+File: `environments/dev/networking/vpc/terragrunt.hcl`
+
+**Current (insecure):**
+
+```hcl
+ingress_rules_transform = [
+  { rule_no = 120, from_port = 22, to_port = 22, cidr_block = "0.0.0.0/0" },
+]
+```
+
+**Fix (restrict to known IPs):**
+
+```hcl
+ingress_rules_transform = [
+  { rule_no = 120, from_port = 22, to_port = 22, cidr_block = "YOUR_OFFICE_IP/32" },
+]
+```
+
+#### 2. Restrict EKS Public Access CIDR (Prod)
+
+**Status:** 🟠 HIGH - Open to internet in prod config
+
+File: `environments/prod/compute/eks/terragrunt.hcl` (line 44)
+
+**Change:**
+
+```hcl
+# FROM:
+public_access_cidrs = ["0.0.0.0/0"]
+
+# TO (restrict to specific IPs):
+public_access_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_VPN_CIDR/24"]
+```
+
+#### 3. Review Security Group Rules
+
+**Status:** 🟠 HIGH - HTTP/HTTPS open to internet
+
+File: `environments/dev/networking/sg/terragrunt.hcl`
+
+**Consider restricting if not needed publicly:**
+
+```hcl
+# For internal applications:
+ingress_rules = [
+  { from_port = 80, cidr_blocks = ["10.0.0.0/16"] },   # VPC only
+  { from_port = 443, cidr_blocks = ["10.0.0.0/16"] },  # VPC only
+]
+```
+
+#### 4. Secure Private Key Storage
+
+**Status:** 🟠 HIGH - Keys written to filesystem
+
+**Current behavior:** Private keys stored in Terraform working directory
+
+**Recommended actions:**
+
+1. Immediately after deployment, move keys to AWS Secrets Manager:
+
+```bash
+aws secretsmanager create-secret \
+  --name finishline-dev-key \
+  --secret-string file://finishline-infra-app-dev-key.pem
+```
+
+2. Delete local file:
+
+```bash
+shred -u finishline-infra-app-dev-key.pem
+```
+
+3. Update module to use Secrets Manager (future enhancement)
+
+#### 5. Review Karpenter IAM Policy Scope
+
+**Status:** 🟡 MEDIUM-HIGH - Overly permissive
+
+File: `modules/security/iam/main.tf` (lines 114-147)
+
+**Current:** `Resource = "*"` for EC2 actions
+
+**Recommended:** Scope to specific VPCs, subnets, and security groups using conditions:
+
+```hcl
+Condition {
+  StringEquals = {
+    "ec2:Vpc" = "arn:aws:ec2:us-east-1:ACCOUNT:vpc/vpc-xxxxx"
+  }
+}
+```
+
+#### 6. Update Cluster Admin Principals
+
+**Status:** 🟡 MEDIUM - Empty admin list may lock out access
+
+File: `environments/*/compute/eks/terragrunt.hcl`
+
+**Add your IAM user/role:**
+
+```hcl
+cluster_admin_principals = [
+  "arn:aws:iam::ACCOUNT:user/your-admin-user",
+  "arn:aws:iam::ACCOUNT:role/your-admin-role"
+]
+```
+
+---
+
+### Environment Readiness
+
+#### Dev Environment
+
+```bash
+# 1. Verify all terragrunt.hcl files exist
+find environments/dev -name "terragrunt.hcl" -exec test -s {} \; -print
+
+# Expected: All files should have content (not empty)
+
+# 2. Validate configuration
+cd environments/dev
+terragrunt run-all validate
+
+# 3. Plan all resources
+terragrunt run-all plan -out=tfplan
+
+# 4. Review security group rules
+aws ec2 describe-security-groups --filters "Name=tag:Environment,Values=dev"
+
+# 5. Review NACL rules
+aws ec2 describe-network-acls --filters "Name=tag:Environment,Values=dev"
+```
+
+#### Stage Environment
+
+```bash
+# Complete all items from Dev, plus:
+
+# 1. Populate all terragrunt.hcl files (see Critical Configuration Checks)
+
+# 2. Verify VPC CIDR doesn't overlap
+# Dev: 10.0.0.0/16
+# Stage: 10.1.0.0/16 ✓
+
+# 3. Review capacity settings
+cd environments/stage/compute/karpenter
+cat terragrunt.hcl | grep -A5 "karpenter_config"
+```
+
+#### Prod Environment
+
+```bash
+# Complete all items from Dev and Stage, plus:
+
+# 1. Populate all terragrunt.hcl files (9 files currently empty)
+
+# 2. Add missing karpenter_controller_role_arn
+
+# 3. Restrict public_access_cidrs
+
+# 4. Review and approve all security group rules
+
+# 5. Enable CloudTrail logging
+
+# 6. Set up CloudWatch alarms
+
+# 7. Test disaster recovery procedures
+
+# 8. Verify backup strategy (S3 versioning, snapshots)
+```
+
+---
+
+## Pre-Launch Validation Script
+
+Run this script before any production deployment:
+
+```bash
+#!/bin/bash
+# pre-launch-check.sh
+
+set -e
+
+echo "=== Pre-Launch Validation ==="
+echo ""
+
+# Check 1: Empty terragrunt.hcl files
+echo "1. Checking for empty terragrunt.hcl files..."
+EMPTY_FILES=$(find environments/prod environments/stage -name "terragrunt.hcl" -empty)
+if [ -n "$EMPTY_FILES" ]; then
+  echo "   ❌ FAIL: Empty terragrunt.hcl files found:"
+  echo "$EMPTY_FILES" | sed 's/^/      /'
+  exit 1
+else
+  echo "   ✓ PASS: No empty terragrunt.hcl files"
+fi
+
+# Check 2: Prod Karpenter controller role
+echo ""
+echo "2. Checking prod Karpenter configuration..."
+if ! grep -q "karpenter_controller_role_arn" environments/prod/compute/karpenter/terragrunt.hcl; then
+  echo "   ❌ FAIL: Missing karpenter_controller_role_arn in prod"
+  exit 1
+else
+  echo "   ✓ PASS: Prod Karpenter controller role configured"
+fi
+
+# Check 3: S3 access type validation
+echo ""
+echo "3. Checking S3 access type validation..."
+if grep -q '"delete"' modules/security/iam/variables.tf | grep -q "condition"; then
+  echo "   ✓ PASS: S3 access type validation includes 'delete'"
+else
+  echo "   ⚠ WARNING: S3 access type validation may need update"
+fi
+
+# Check 4: Public access CIDRs in prod
+echo ""
+echo "4. Checking prod EKS public access CIDRs..."
+if grep -q '0\.0\.0\.0/0' environments/prod/compute/eks/terragrunt.hcl; then
+  echo "   ⚠ WARNING: Prod EKS allows access from 0.0.0.0/0"
+  echo "   Consider restricting to specific IPs"
+else
+  echo "   ✓ PASS: Prod EKS access is restricted"
+fi
+
+# Check 5: SSH open to internet
+echo ""
+echo "5. Checking NACL SSH rules..."
+if grep -q 'cidr_block = "0\.0\.0\.0/0"' environments/dev/networking/vpc/terragrunt.hcl; then
+  echo "   ⚠ WARNING: SSH open to 0.0.0.0/0 in dev NACL rules"
+else
+  echo "   ✓ PASS: SSH is restricted"
+fi
+
+echo ""
+echo "=== Validation Complete ==="
+echo ""
+echo "Review any WARNINGs above before proceeding with deployment."
+```
+
+---
 
 ---
 
@@ -377,6 +781,118 @@ terragrunt init -upgrade
 terragrunt validate
 terragrunt plan
 ```
+
+### Karpenter CRD Recognition Error
+
+**Error:**
+
+```
+Error: API did not recognize GroupVersionKind from manifest (CRD may not be installed)
+│
+│   with kubernetes_manifest.karpenter_ec2_node_class,
+│   on main.tf line 51, in resource "kubernetes_manifest" "karpenter_ec2_node_class":
+│   51: resource "kubernetes_manifest" "karpenter_ec2_node_class" {
+│
+│ no matches for kind "EC2NodeClass" in group "karpenter.k8s.aws"
+```
+
+**Cause:** Terraform's `kubernetes_manifest` resource validates schemas at **plan time**, not just at apply time. Even with proper `depends_on` configurations, Terraform queries the API server for schema validation during `terraform plan`, which fails if CRDs aren't already registered.
+
+**Resolution (REMEDIATION 010 - Final Fix):**
+
+The module has been updated to use `kubectl_manifest` instead of `kubernetes_manifest`. This approach defers schema validation to apply time, avoiding plan-time CRD validation errors.
+
+**Key Changes Applied:**
+
+1. **Use `kubectl_manifest` for CRDs** - Installs EC2NodeClass, NodePool, and NodeClaim CRDs without plan-time validation
+2. **Use `kubectl_manifest` for Karpenter Resources** - EC2NodeClass and NodePool resources use `kubectl_manifest`
+3. **Helm with `skip_crds = true`** - Helm chart installs only the controller, CRDs are managed separately
+4. **60-second time buffer** - `time_sleep` ensures controller is ready before applying resources
+5. **`create_namespace = true`** - Helm creates the karpenter namespace automatically
+
+**Updated Resource Dependency Chain:**
+
+```
+kubectl_manifest.karpenter_crds (EC2NodeClass CRD)
+    └── kubectl_manifest.karpenter_crds_nodepool (NodePool CRD)
+        └── kubectl_manifest.karpenter_crds_nodeclaim (NodeClaim CRD)
+            └── helm_release.karpenter (Controller)
+                └── time_sleep.wait_for_karpenter_crds (60s buffer)
+                    └── kubectl_manifest.karpenter_ec2_node_class
+                        └── kubectl_manifest.karpenter_node_pool
+```
+
+**Required Providers:**
+
+```hcl
+# In root.hcl:
+required_providers {
+  kubectl = {
+    source  = "gavinbunney/kubectl"
+    version = ">= 1.14"
+  }
+  time = {
+    source  = "hashicorp/time"
+    version = "~> 0.9"
+  }
+}
+```
+
+**If you encounter this error on older configurations:**
+
+```bash
+# 1. Navigate to Karpenter module
+cd environments/dev/compute/karpenter
+
+# 2. Update to latest code
+git pull origin main
+
+# 3. Re-initialize to download kubectl provider
+terragrunt init -upgrade
+
+# 4. Plan and apply
+terragrunt plan -out=tfplan
+terragrunt apply tfplan
+```
+
+**Verify CRDs are installed:**
+
+```bash
+# Check Karpenter CRDs exist
+kubectl get crds | grep karpenter
+
+# Expected output:
+# ec2nodeclasses.karpenter.k8s.aws          2024-01-01T00:00:00Z
+# nodeclaims.karpenter.k8s.aws              2024-01-01T00:00:00Z
+# nodepools.karpenter.sh                    2024-01-01T00:00:00Z
+
+# Check Karpenter controller is running
+kubectl get pods -n karpenter
+
+# Expected:
+# NAME                         READY   STATUS    RESTARTS   AGE
+# karpenter-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
+
+# Verify EC2NodeClass and NodePool
+kubectl get ec2nodeclass default
+kubectl get nodepool default
+
+# Expected:
+# NAME      ZONES        USAGELIMITED   READY   AGE
+# default   us-east-1a   true           True    2m
+
+# NAME    TYPE        NODECLASS   MIN   MAX   WEIGHT   READY   AGE
+# default   provision   default     -     -     100      True    2m
+```
+
+**Why kubectl_manifest?**
+
+| Feature                 | `kubernetes_manifest`      | `kubectl_manifest`        |
+| ----------------------- | -------------------------- | ------------------------- |
+| Plan-time validation    | ✅ Yes (causes CRD errors) | ❌ No (deferred to apply) |
+| Schema validation       | Strict                     | Flexible                  |
+| CRD dependency handling | Complex                    | Simple                    |
+| Recommended for CRDs    | ❌ No                      | ✅ Yes                    |
 
 ---
 
@@ -823,6 +1339,8 @@ Before deploying Karpenter, ensure:
 
 1. EKS cluster has **public endpoint enabled** (for dev environment), OR
 2. You are running from within the VPC (e.g., jumphost)
+3. IAM roles are created (`security/iam`) with Karpenter controller and node roles
+4. VPC and security groups have `karpenter.sh/discovery` tags
 
 **Enable EKS Public Access (Dev Only):**
 
@@ -849,9 +1367,14 @@ aws eks describe-cluster --name finishline-infra-app-dev-eks \
 cd ../karpenter
 ```
 
-#### 3.1 Apply Terraform Module (EC2NodeClass & NodePool)
+#### 3.1 Apply Terraform Module (All-in-One)
 
-**Important:** Apply the Terraform module FIRST to create EC2NodeClass and NodePool resources.
+**Important:** The Karpenter module now handles everything in a single apply:
+
+- CRD installation (EC2NodeClass, NodePool, NodeClaim)
+- Helm chart installation (controller)
+- EC2NodeClass resource
+- NodePool resource
 
 ```bash
 # Navigate to Karpenter module
@@ -860,20 +1383,33 @@ cd ../karpenter
 # Review configuration
 cat terragrunt.hcl
 
-# Initialize
+# Initialize (downloads kubectl provider)
 terragrunt init
 
 # Plan deployment
 terragrunt plan -out=tfplan
 
-# Apply - This creates EC2NodeClass and NodePool as kubernetes_manifest resources
+# Apply - Creates all Karpenter resources
 terragrunt apply tfplan
 ```
 
-**What this creates:**
+**What this creates (in order):**
 
-- `kubernetes_manifest.karpenter_ec2_node_class` - EC2NodeClass resource
-- `kubernetes_manifest.karpenter_node_pool` - NodePool resource
+1. `kubectl_manifest.karpenter_crds` - EC2NodeClass CRD
+2. `kubectl_manifest.karpenter_crds_nodepool` - NodePool CRD
+3. `kubectl_manifest.karpenter_crds_nodeclaim` - NodeClaim CRD
+4. `helm_release.karpenter` - Karpenter controller (OCI chart)
+5. `time_sleep.wait_for_karpenter_crds` - 60-second buffer
+6. `kubectl_manifest.karpenter_ec2_node_class` - EC2NodeClass resource
+7. `kubectl_manifest.karpenter_node_pool` - NodePool resource
+
+**Expected Timeline:**
+
+- CRD installation: ~10-15s
+- Helm chart installation: ~30-60s
+- Time buffer: 60s
+- Karpenter resources: ~10s
+- **Total: ~2-3 minutes**
 
 **Troubleshooting "cannot create REST client" Error:**
 
@@ -881,7 +1417,7 @@ If you see this error:
 
 ```
 Error: Failed to construct REST client
-  with kubernetes_manifest.karpenter_ec2_node_class,
+  with kubectl_manifest.karpenter_ec2_node_class,
   cannot create REST client: no client config
 ```
 
@@ -906,69 +1442,51 @@ cd /path/to/karpenter
 terragrunt apply
 ```
 
-#### 3.2 Install Karpenter Helm Chart
+#### 3.2 Helm Chart Installation
 
-The Karpenter Helm chart is now managed by the `helm_release` resource in the Terraform module (`terraform/modules/compute/karpenter/main.tf`). The chart is installed from the AWS ECR public OCI registry:
+The Karpenter Helm chart is managed by the `helm_release` resource in the Terraform module. The chart is installed from the AWS ECR public OCI registry:
 
 ```
-oci://public.ecr.aws/karpenter
+oci://public.ecr.aws/karpenter/karpenter
 ```
 
-No manual `helm install` is required. When you run `terragrunt apply` on the Karpenter module, Terraform automatically installs/upgrades the Helm chart with the configured values.
+**Chart Version:** 1.0.8
+
+**Configuration:**
+
+- `create_namespace = true` - Creates karpenter namespace automatically
+- `skip_crds = true` - CRDs are installed separately via kubectl_manifest
+- `wait = true` - Waits for controller to be ready
+- `wait_for_jobs = true` - Waits for any Helm jobs to complete
+
+No manual `helm install` is required. When you run `terragrunt apply` on the Karpenter module, Terraform automatically installs/upgrades the Helm chart.
 
 **Important:** Ensure you are using Helm provider >= 3.0. If you encounter `Unsupported block type` errors for `set` blocks, see [Helm Provider set Block Syntax Error](#helm-provider-set-block-syntax-error).
-
-**Manual Install (if needed for debugging):**
-
-```bash
-# Update kubeconfig (if not already done)
-aws eks update-kubeconfig --name finishline-infra-app-dev-eks --region us-east-1
-
-# Create karpenter namespace
-kubectl create namespace karpenter
-
-# Get Karpenter controller role ARN from IAM module
-KARPENTER_ROLE_ARN=$(cd ../../security/iam && terragrunt output karpenter_controller_role_arn)
-echo "Karpenter Role ARN: $KARPENTER_ROLE_ARN"
-
-# Annotate service account with IAM role (IRSA)
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: karpenter
-  namespace: karpenter
-  annotations:
-    eks.amazonaws.com/role-arn: ${KARPENTER_ROLE_ARN}
-EOF
-
-# Verify annotation
-kubectl get sa karpenter -n karpenter -o yaml | grep eks.amazonaws.com/role-arn
-
-# Manual install from OCI registry (only if not using Terraform)
-helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
-  --namespace karpenter \
-  --create-namespace \
-  --version 1.0.8 \
-  --set serviceAccount.name=karpenter \
-  --set serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_ROLE_ARN} \
-  --set settings.clusterName=finishline-infra-app-dev-eks \
-  --set settings.clusterEndpoint=<eks-endpoint> \
-  --set settings.interruptionQueue=finishline-infra-app-dev-eks \
-  --set replicas=1 \
-  --wait
-```
 
 #### 3.3 Verify Karpenter
 
 ```bash
-# Check Terraform created the manifests
+# Update kubeconfig
+aws eks update-kubeconfig --name finishline-infra-app-dev-eks --region us-east-1
+
+# Check CRDs
+kubectl get crds | grep karpenter
+
+# Expected output:
+# ec2nodeclasses.karpenter.k8s.aws          2024-01-01T00:00:00Z
+# nodeclaims.karpenter.k8s.aws              2024-01-01T00:00:00Z
+# nodepools.karpenter.sh                    2024-01-01T00:00:00Z
+
+# Check EC2NodeClass and NodePool
 kubectl get ec2nodeclass
 kubectl get nodepool
 
 # Expected output:
-# NAME      AGE
-# default   2m
+# NAME      ZONES        USAGELIMITED   READY   AGE
+# default   us-east-1a   true           True    2m
+
+# NAME    TYPE        NODECLASS   MIN   MAX   WEIGHT   READY   AGE
+# default   provision   default     -     -     100      True    2m
 
 # Check Karpenter pods
 kubectl get pods -n karpenter
@@ -984,6 +1502,7 @@ kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --tail=50
 # "Discovered security group"
 # "Discovered subnets"
 # "Starting controller"
+# "Successfully synced secrets"
 ```
 
 #### 3.4 Test Karpenter Scaling
@@ -1000,6 +1519,10 @@ spec:
   selector:
     matchLabels:
       app: inflate
+  template:
+    metadata:
+      labels:
+        app: inflate
   template:
     metadata:
       labels:
