@@ -46,3 +46,5 @@ terragrunt-debug.tfvars.json
 ## Aws Keys Pair
 
 *.pem*
+
+trust-policy.json 

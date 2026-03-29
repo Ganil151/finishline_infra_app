@@ -161,6 +161,11 @@ variable "node_group_subnets" {
 variable "node_group_ami_type" {
   description = "AMI type for the EKS node group (AL2_x86_64, AL2_ARM_64, BOTTLEROCKET_x86_64, etc.)"
   type        = string
+
+  validation {
+    condition     = contains(["AL2_x86_64", "AL2_ARM_64", "BOTTLEROCKET_x86_64", "BOTTLEROCKET_ARM_64", "CUSTOM"], var.node_group_ami_type)
+    error_message = "The API rigorously enforces case-sensitivity. The provider strictly requires lower-case 'x' in 'x86_64' (e.g., 'BOTTLEROCKET_x86_64'). 'BOTTLEROCKET_X86_64' is invalid and will natively fail the AWS API constraint validation."
+  }
 }
 
 variable "node_group_instance_types" {

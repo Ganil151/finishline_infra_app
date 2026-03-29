@@ -324,8 +324,9 @@ init_environment() {
     # 5. Security Groups (depends on VPC)
     # 6. ALB (depends on VPC and SG)
     # 7. EKS (depends on IAM, VPC, SG, KMS)
-    # 8. Karpenter (depends on EKS)
-    # 9. Jumphost (depends on VPC, SG, Key Pair, IAM)
+    # 8. IAM (OIDC Update - dynamically initialized above)
+    # 9. Karpenter (depends on EKS)
+    # 10. Jumphost (depends on VPC, SG, Key Pair, IAM)
     #-----------------------------
     
     run_terragrunt_init "$env_dir/security/iam" "IAM Module"
@@ -384,13 +385,14 @@ run_environment() {
     # 5. Security Groups (depends on VPC)
     # 6. ALB (depends on VPC and SG)
     # 7. EKS (depends on IAM, VPC, SG, KMS)
-    # 8. Karpenter (depends on EKS)
-    # 9. Jumphost (depends on VPC, SG, Key Pair, IAM)
+    # 8. IAM (OIDC Update - creates IRSA roles now that EKS exists)
+    # 9. Karpenter (depends on EKS and IRSA roles)
+    # 10. Jumphost (depends on VPC, SG, Key Pair, IAM)
     #-----------------------------
     
     local env_failed=0
     local step=1
-    local total_steps=9
+    local total_steps=10
     
     run_terragrunt "$env_dir/security/iam" "IAM Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1
     run_terragrunt "$env_dir/security/key_pair" "Key Pair Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1
@@ -405,6 +407,9 @@ run_environment() {
     run_terragrunt "$env_dir/networking/sg" "Security Groups Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1
     run_terragrunt "$env_dir/networking/alb" "ALB Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1
     run_terragrunt "$env_dir/compute/eks" "EKS Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1
+    
+    # Re-run IAM to catch dynamic OIDC URLs for IRSA roles
+    run_terragrunt "$env_dir/security/iam" "IAM Module (OIDC Update)" "$step/$total_steps" && step=$((step+1)) || env_failed=1
     
     if module_exists "$env_dir/compute/karpenter"; then
         run_terragrunt "$env_dir/compute/karpenter" "Karpenter Module" "$step/$total_steps" && step=$((step+1)) || env_failed=1

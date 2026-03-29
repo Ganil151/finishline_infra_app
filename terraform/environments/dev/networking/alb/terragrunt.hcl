@@ -79,5 +79,5 @@ inputs = {
     Manage_by   = "${local.managed_by}"
   }
 
-
+  computed_tags = {}
 }

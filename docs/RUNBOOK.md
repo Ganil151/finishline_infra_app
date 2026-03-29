@@ -179,14 +179,19 @@ gantt
 
 ### AWS Configuration
 
+> [!NOTE]
+> **What this does:** The AWS CLI (Command Line Interface) is how your local computer authenticates with the AWS Cloud. Without this step, Terraform has no permission to construct anything on your behalf.
+
 ```bash
-# Configure AWS credentials
+# 1. Provide your long-term Access Keys to the terminal
+#    This securely creates the ~/.aws/credentials file on your system.
 aws configure
 
-# Verify configuration
+# 2. Verify your terminal has successfully negotiated a Trust Relationship with AWS
+#    STS stands for 'Security Token Service'. This command proves exactly WHO AWS thinks you are at this exact moment.
 aws sts get-caller-identity
 
-# Expected output:
+# Expected successful output (proves you are authenticated correctly):
 # {
 #     "UserId": "AIDAXXXXXXXXXXXXXXXXX",
 #     "Account": "123456789012",
@@ -470,23 +475,29 @@ cluster_admin_principals = [
 
 #### Dev Environment
 
+> [!TIP]
+> **Terragrunt 101:** Think of Terraform as the engine that builds your infrastructure, and Terragrunt as the steering wheel. Administrator environments usually require heavy code duplication. Terragrunt solves this by reading the `terragrunt.hcl` files to automatically configure Terraform backend states and inject variables dynamically, keeping your code DRY (Don't Repeat Yourself).
+> Furthermore, the `run-all` command intelligently reads the `dependency "X"` blocks in your configs, building an execution graph to apply modules in the correct sequential order (e.g. VPC -> SG -> ALB -> EKS).
+
 ```bash
-# 1. Verify all terragrunt.hcl files exist
+# 1. Verify all terragrunt.hcl files exist (Linux/Mac)
+#    This safety check explicitly searches for accidentally empty configurations that might break the dependency graph.
 find environments/dev -name "terragrunt.hcl" -exec test -s {} \; -print
 
 # Expected: All files should have content (not empty)
 
-# 2. Validate configuration
+# 2. Validate configuration syntax across the entire environment hierarchy
 cd environments/dev
 terragrunt run-all validate
 
 # 3. Plan all resources
+#    This queries the live AWS API to see what exists, compares it to your code, and outputs a dry-run DIFF without altering state.
 terragrunt run-all plan -out=tfplan
 
-# 4. Review security group rules
+# 4. Review security group rules natively via the AWS API to ensure nothing is exposed dangerously outside of Terraform's view
 aws ec2 describe-security-groups --filters "Name=tag:Environment,Values=dev"
 
-# 5. Review NACL rules
+# 5. Review NACL rules independently of Terraform to ensure strict boundary subnets
 aws ec2 describe-network-acls --filters "Name=tag:Environment,Values=dev"
 ```
 
@@ -599,9 +610,6 @@ echo "Review any WARNINGs above before proceeding with deployment."
 ```
 
 ---
-
----
-
 ## Known Issues and Fixes
 
 ### NAT Gateway Availability Mode Error
@@ -642,7 +650,6 @@ resource "aws_nat_gateway" "finishline_nat_gw" {
 ### Terragrunt Module Path Issues
 
 **Error:**
-
 ```
 error occurred: stat /home/ganil/Documents/finishline_infra_app/terraform/environments/modules: no such file or directory
 ```
@@ -650,7 +657,6 @@ error occurred: stat /home/ganil/Documents/finishline_infra_app/terraform/enviro
 **Cause:** The `source` path in `terragrunt.hcl` uses incorrect relative path depth.
 
 **Resolution:**
-
 ```hcl
 # Incorrect (3 levels up):
 source = "${get_terragrunt_dir()}/../../../modules//networking/alb"
@@ -660,9 +666,7 @@ source = "${get_terragrunt_dir()}/../../../../modules//networking/alb"
 ```
 
 ### Missing Variable Errors
-
 **Error:**
-
 ```
 var.alb_name
   Name of the Application Load Balancer
@@ -887,11 +891,11 @@ kubectl get nodepool default
 
 **Why kubectl_manifest?**
 
-| Feature                 | `kubernetes_manifest`      | `kubectl_manifest`        |
-| ----------------------- | -------------------------- | ------------------------- |
+| Feature                 | `kubernetes_manifest`     | `kubectl_manifest`       |
+| ----------------------- | ------------------------- | ------------------------ |
 | Plan-time validation    | ✅ Yes (causes CRD errors) | ❌ No (deferred to apply) |
-| Schema validation       | Strict                     | Flexible                  |
-| CRD dependency handling | Complex                    | Simple                    |
+| Schema validation       | Strict                    | Flexible                 |
+| CRD dependency handling | Complex                   | Simple                   |
 | Recommended for CRDs    | ❌ No                      | ✅ Yes                    |
 
 ---
@@ -1278,17 +1282,23 @@ terragrunt apply tfplan
 
 **Verify:**
 
+> [!TIP]
+> **Kubectl 101:** `kubectl` is the command-line Swiss Army Knife for communicating with the Kubernetes API server. When you run `update-kubeconfig`, AWS securely injects an authentication token into your hidden `~/.kube/config` file.
+> 
+> *   `cluster-info` asks the Master Control Plane: "Are you alive, and where are your core services?"
+> *   `get nodes` queries the API server to list all attached EC2 worker nodes and their current health status (`Ready`).
+
 ```bash
-# Update kubeconfig
+# 1. Download the authentication token to your machine so kubectl can talk to the EKS API
 aws eks update-kubeconfig --name finishline-infra-app-dev-eks --region us-east-1
 
-# Check cluster status
+# 2. Check cluster control plane status
 kubectl cluster-info
 
-# Check nodes
+# 3. Check the health of your managed EC2 worker nodes
 kubectl get nodes
 
-# Expected:
+# Expected Output (Proves your nodes successfully registered with the Control Plane):
 # NAME                          STATUS   ROLES    AGE   VERSION
 # ip-10-0-10-1.ec2.internal     Ready    <none>   5m    v1.30.x
 # ip-10-0-11-1.ec2.internal     Ready    <none>   5m    v1.30.x

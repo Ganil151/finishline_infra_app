@@ -50,80 +50,50 @@ The Key Pair module provides automated SSH key pair generation and management fo
 
 ### Key Generation and Distribution Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Key Pair Module Flow                              │
-└─────────────────────────────────────────────────────────────────────────┘
-
-                    ┌─────────────────────────┐
-                    │   Terraform Apply       │
-                    │   module "key_pair"     │
-                    └───────────┬─────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │   tls_private_key       │
-                    │   RSA 4096-bit          │
-                    │   Generation            │
-                    └───────────┬─────────────┘
-                                │
-                ┌───────────────┴───────────────┐
-                │                               │
-                ▼                               ▼
-    ┌───────────────────────┐       ┌───────────────────────┐
-    │   Private Key         │       │   Public Key          │
-    │   (OpenSSH format)    │       │   (OpenSSH format)    │
-    │   -----BEGIN OPENSSH  │       │   ssh-rsa AAAA...     │
-    │   PRIVATE KEY-----    │       │                       │
-    └───────────┬───────────┘       └───────────┬───────────┘
-                │                               │
-                ▼                               ▼
-    ┌───────────────────────┐       ┌───────────────────────┐
-    │   local_file          │       │   aws_key_pair        │
-    │   Save to filesystem  │       │   Register with AWS   │
-    │   {key_name}.pem      │       │   EC2 Key Pair        │
-    └───────────┬───────────┘       └───────────┬───────────┘
-                │                               │
-                ▼                               ▼
-    ┌───────────────────────┐       ┌───────────────────────┐
-    │   chmod 400           │       │   EC2 Instances       │
-    │   Secure permissions  │       │   SSH Access          │
-    └───────────────────────┘       └───────────────────────┘
+```mermaid
+graph TD
+    Start[Terraform Apply<br/>module 'key_pair']
+    Gen[tls_private_key<br/>RSA 4096-bit Generation]
+    
+    Start --> Gen
+    
+    subgraph Keys [Generated Keys]
+        Priv[Private Key<br/>OpenSSH format]
+        Pub[Public Key<br/>OpenSSH format]
+    end
+    
+    Gen --> Priv
+    Gen --> Pub
+    
+    Save[local_file<br/>Save to {key_name}.pem]
+    Reg[aws_key_pair<br/>Register with AWS]
+    
+    Priv --> Save
+    Pub --> Reg
+    
+    Perms[chmod 400<br/>Secure permissions]
+    Access[EC2 Instances<br/>SSH Access]
+    
+    Save --> Perms
+    Reg --> Access
 ```
 
 ### SSH Authentication Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        SSH Authentication Flow                           │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant User as User / SSH Client
+    participant Instance as EC2 Instance
+    participant AWS as AWS Key Pair (Public)
 
-1. User initiates SSH connection
-   ssh -i ~/.ssh/finishline-prod-ssh-key.pem ec2-user@<instance-ip>
-   │
-   ▼
-2. SSH client sends public key to instance
-   Public key fingerprint verification
-   │
-   ▼
-3. EC2 instance checks authorized_keys
-   Compares with registered public key
-   │
-   ▼
-4. Challenge-Response Authentication
-   Instance sends challenge encrypted with public key
-   │
-   ▼
-5. Client decrypts challenge with private key
-   Private key never leaves the client
-   │
-   ▼
-6. Instance verifies response
-   Authentication successful
-   │
-   ▼
-7. SSH session established
-   Secure shell access granted
+    User->>Instance: 1. Initiate SSH connection (ssh -i key.pem)
+    Instance-->>User: 2. Request Public Key / Fingerprint
+    User->>Instance: 3. Send Public Key
+    Instance->>AWS: 4. Verify against authorized_keys
+    Instance->>User: 5. Send Encrypted Challenge (using Public Key)
+    User->>User: 6. Decrypt Challenge (using Private Key)
+    User->>Instance: 7. Send Decrypted Response
+    Instance-->>User: 8. Authentication Successful / Session Established
 ```
 
 ---
@@ -980,17 +950,16 @@ key_pair/
 
 ### Resource Dependencies
 
-```
-tls_private_key.rsa_4096
-        │
-        ├──► aws_key_pair.finishline_public_key
-        │       (uses public_key_openssh)
-        │
-        └──► local_file.private_key
-                (uses private_key_openssh)
-                │
-                └──► null_resource.key_warning
-                        (depends_on local_file)
+```mermaid
+graph TD
+    TLS[tls_private_key.rsa_4096]
+    AWS[aws_key_pair.finishline_public_key]
+    File[local_file.private_key]
+    Warn[null_resource.key_warning]
+    
+    TLS --> AWS
+    TLS --> File
+    File --> Warn
 ```
 
 ---

@@ -25,6 +25,11 @@ terraform {
   source = "../../../../modules//networking/sg"
 }
 
+locals {
+  # Dynamically fetch the executor's public IPv4 address without relying on hardcoded strings
+  executor_ip = chomp(run_cmd("--terragrunt-quiet", "curl", "-s", "https://ipv4.icanhazip.com"))
+}
+
 inputs = {
  
   project_name = "finishline-infra-app"
@@ -46,7 +51,7 @@ inputs = {
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
-      cidr_blocks = ["186.6.206.40/32"]
+      cidr_blocks = ["${local.executor_ip}/32"]
     },
     {
       description = "HTTP access from internet"

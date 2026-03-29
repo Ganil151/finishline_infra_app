@@ -24,47 +24,94 @@ This repository contains the complete infrastructure-as-code (IaC) configuration
 
 ## Architecture
 
+### 1. Ingress Routing & Network Flow
+```mermaid
+flowchart TD
+    Client((Internet))
+    
+    subgraph AWS["AWS Cloud Boundary"]
+        Route53[Route 53 DNS]
+        
+        subgraph VPC["VPC: Finishline Network"]
+            subgraph Public["Public Subnets (AZ-a, AZ-b)"]
+                IGW[Internet Gateway]
+                ALB[Shared Application Load Balancer]
+                Bastion[Jumphost]
+            end
+            
+            subgraph Private["Private Subnets (AZ-a, AZ-b)"]
+                subgraph EKS["EKS Cluster Boundary"]
+                    IngressCtrl[Ingress Controller / IngressGroup]
+                    KarpenterCtrl[Karpenter Controller]
+                    
+                    subgraph Workloads["Compute Layer"]
+                        Pod[Application Pods]
+                    end
+                end
+            end
+        end
+    end
+
+    Client -->|HTTPS| Route53
+    Route53 -->|DNS Resolution| ALB
+    ALB -->|Target Group Routing| IngressCtrl
+    IngressCtrl -->|K8s Service| Pod
 ```
-                                    Internet
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Route 53 (DNS)              │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Application Load Balancer   │
-                        │   (Public Subnets)            │
-                        └───────────────────────────────┘
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │                    VPC (Private Network)                   │
-        │                                                           │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │              Public Subnets                          │  │
-        │  │  - ALB, NAT Gateway, Jumphost                        │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        │                           │                                │
-        │                           │ NAT Gateway                    │
-        │                           ▼                                │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │              Private Subnets                         │  │
-        │  │  - EKS Nodes, Karpenter Nodes, Applications          │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Security Module (IAM)       │
-                        │   - Cluster Role              │
-                        │   - Node Role                 │
-                        │   - Karpenter Roles           │
-                        │   - OIDC Provider (IRSA)      │
-                        └───────────────────────────────┘
+
+### 2. Jumphost -> EKS API Server Authentication
+```mermaid
+sequenceDiagram
+    participant Admin as DevSecOps Engineer
+    
+    box AWS Secure Boundary
+        participant Bastion as EC2 Jumphost (Public Subnet)
+        participant IAM as AWS STS
+        participant EKS as EKS API Server (Private Subnet)
+    end
+
+    Admin->>Bastion: 1. SSH using private key (Strict NACLs)
+    Bastion-->>Admin: SSH session established
+    Admin->>IAM: 2. aws eks update-kubeconfig
+    IAM-->>Admin: 3. Temporary IRSA/STS Credentials Returned
+    Admin->>EKS: 4. kubectl get nodes (Signed via aws-iam-authenticator)
+    EKS-->>Admin: 5. Authorized Response (RBAC validated)
+```
+
+### 3. Karpenter Autoscaling Lifecycle
+```mermaid
+stateDiagram-v2
+    [*] --> PodPending
+    
+    state "Evaluating Capacity" as Eval
+    state "Provisioning Node" as Prov
+    
+    state PodPending {
+        state "Kube-scheduler" as KS
+        KS : Cannot schedule -> Pod remains pending
+    }
+    
+    PodPending --> Eval : Resource limits hit
+
+    state Eval {
+        KC : Karpenter Controller Observer
+        KC : Analyzes pending pod requirements
+        KC : Matches t3.medium & Bottlerocket constraints
+    }
+    
+    Eval --> Prov : Need Node
+    
+    state Prov {
+        EC2 : Fleet API called (EC2NodeClass definition)
+        Join : Node registers with Control Plane
+    }
+    
+    Prov --> Scheduled : NodeReady Status
+
+    state Scheduled {
+        Running : Pod executing workload
+    }
+    
+    Scheduled --> [*]
 ```
 
 ## Prerequisites

@@ -48,67 +48,82 @@ This module provisions:
 
 ## Architecture
 
-```
-                                    Internet
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Application Load Balancer   │
-                        │          (ALB)                │
-                        │   DNS: alb-xyz.us-west-2.elb.amazonaws.com  │
-                        └───────────────────────────────┘
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-        ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
-        │   Target Group    │ │   Target Group    │ │   Target Group    │
-        │   (Web App)       │ │   (API)           │ │   (Admin)         │
-        │   Port: 8080      │ │   Port: 8081      │ │   Port: 8082      │
-        └─────────┬─────────┘ └─────────┬─────────┘ └─────────┬─────────┘
-                  │                     │                     │
-        ┌─────────┴─────────┐ ┌─────────┴─────────┐ ┌─────────┴─────────┐
-        │  EC2 Instance 1   │ │  EC2 Instance 3   │ │  EC2 Instance 5   │
-        │  (AZ-a)           │ │  (AZ-a)           │ │  (AZ-a)           │
-        └───────────────────┘ └───────────────────┘ └───────────────────┘
-        ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
-        │  EC2 Instance 2   │ │  EC2 Instance 4   │ │  EC2 Instance 6   │
-        │  (AZ-b)           │ │  (AZ-b)           │ │  (AZ-b)           │
-        └───────────────────┘ └───────────────────┘ └───────────────────┘
+```mermaid
+flowchart TB
+    Internet["Internet"]
+
+    subgraph ALB ["Application Load Balancer (ALB)"]
+        direction TB
+        ALB_DNS["DNS: alb-xyz.us-west-2.elb.amazonaws.com"]
+    end
+
+    subgraph TG1 ["Target Group (Web App)<br/>Port: 8080"]
+        direction TB
+    end
+
+    subgraph TG2 ["Target Group (API)<br/>Port: 8081"]
+        direction TB
+    end
+
+    subgraph TG3 ["Target Group (Admin)<br/>Port: 8082"]
+        direction TB
+    end
+
+    subgraph AZ_a ["Availability Zone: us-west-2a"]
+        EC2_1["EC2 Instance 1"]
+        EC2_3["EC2 Instance 3"]
+        EC2_5["EC2 Instance 5"]
+    end
+
+    subgraph AZ_b ["Availability Zone: us-west-2b"]
+        EC2_2["EC2 Instance 2"]
+        EC2_4["EC2 Instance 4"]
+        EC2_6["EC2 Instance 6"]
+    end
+
+    Internet --> ALB
+    ALB --> TG1
+    ALB --> TG2
+    ALB --> TG3
+
+    TG1 --> EC2_1
+    TG1 --> EC2_2
+    TG2 --> EC2_3
+    TG2 --> EC2_4
+    TG3 --> EC2_5
+    TG3 --> EC2_6
+
+    style ALB fill:#ff9900,stroke:#e68a00,stroke-width:3px,color:#fff
+    style TG1 fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style TG2 fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style TG3 fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style AZ_a fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style AZ_b fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
 ```
 
 ### Request Flow
 
-```
-Client Request
-      │
-      ▼
-┌─────────────────────────┐
-│  Route 53 (DNS)         │
-│  app.example.com ───────┤
-└─────────────────────────┘
-      │
-      ▼
-┌─────────────────────────┐
-│  Application Load       │
-│  Balancer (ALB)         │
-│  - SSL Termination      │
-│  - Listener Rules       │
-└─────────────────────────┘
-      │
-      ▼
-┌─────────────────────────┐
-│  Target Group           │
-│  - Health Checks        │
-│  - Load Balancing       │
-│  - Stickiness           │
-└─────────────────────────┘
-      │
-      ▼
-┌─────────────────────────┐
-│  EC2 / ECS / EKS        │
-│  (Application Server)   │
-└─────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant Client as Client
+    participant R53 as Route 53 (DNS)<br/>app.example.com
+    participant ALB as Application Load Balancer<br/>(SSL Termination, Rules)
+    participant TG as Target Group<br/>(Health Checks, LB)
+    participant EC2 as EC2/ECS/EKS<br/>(Application Server)
+
+    Client->>R53: DNS Query
+    R53-->>Client: ALB DNS Name
+    Client->>ALB: HTTPS Request
+    ALB->>ALB: SSL Termination
+    ALB->>ALB: Apply Listener Rules
+    ALB->>TG: Route to Target Group
+    TG->>TG: Health Check Validation
+    TG->>EC2: Forward Request
+    EC2-->>TG: Response
+    TG-->>ALB: Response
+    ALB-->>Client: HTTPS Response
+
+    Note over ALB,TG: Cross-Zone Load Balancing<br/>distributes across all AZs
 ```
 
 ---

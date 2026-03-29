@@ -39,30 +39,59 @@ Security groups act as virtual firewalls for your AWS instances, controlling inb
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph VPC ["VPC"]
+        direction TB
+
+        subgraph Subnet ["Subnet"]
+            direction LR
+            EC2["EC2 Instance<br/>EKS Node<br/>RDS Instance"]
+        end
+    end
+
+    SG["Security Group<br/>(Ingress/Egress Rules)"]
+    Internet["Internet"]
+
+    VPC --> Terraform
+    Terraform["Terraform Module<br/>(sg)"] --> Config["Configuration<br/>(variables)"]
+
+    EC2 <-->|"Ingress Rules"| SG
+    SG <-->|"Egress Rules"| Internet
+
+    style VPC fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style Subnet fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style EC2 fill:#4a4e69,stroke:#22223b,stroke-width:2px,color:#fff
+    style SG fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style Internet fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style Terraform fill:#26466d,stroke:#1d3557,stroke-width:2px,color:#fff
+    style Config fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                            VPC                                   │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                    Subnet                                  │  │
-│  │  ┌─────────────────┐                                      │  │
-│  │  │   EC2 Instance  │◄──── Security Group ────► Internet   │  │
-│  │  │   EKS Node      │     (Ingress/Egress Rules)           │  │
-│  │  │   RDS Instance  │                                      │  │
-│  │  └─────────────────┘                                      │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │  Terraform      │
-                    │  Module (sg)    │
-                    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │  Configuration  │
-                    │  (variables)    │
-                    └─────────────────┘
+
+### Security Group Rule Evaluation
+
+```mermaid
+flowchart LR
+    subgraph Ingress ["Ingress Rules (Inbound)"]
+        direction TB
+        I1["Rule 1:<br/>Port 22/TCP<br/>10.0.1.0/24"]
+        I2["Rule 2:<br/>Port 443/TCP<br/>0.0.0.0/0"]
+        I3["Rule 3:<br/>Port 80/TCP<br/>0.0.0.0/0"]
+    end
+
+    subgraph Egress ["Egress Rules (Outbound)"]
+        direction TB
+        E1["Rule 1:<br/>All Traffic<br/>0.0.0.0/0"]
+    end
+
+    TrafficIn["Inbound Traffic"] --> Ingress
+    Ingress --> Instance["EC2/EKS/RDS<br/>Instance"]
+    Instance --> Egress
+    Egress --> TrafficOut["Outbound Traffic"]
+
+    style Ingress fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style Egress fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style Instance fill:#4a4e69,stroke:#22223b,stroke-width:2px,color:#fff
 ```
 
 ---

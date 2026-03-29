@@ -28,6 +28,12 @@ This Terraform module creates and configures a complete AWS VPC (Virtual Private
 
 ## Overview
 
+> [!NOTE] 
+> **The 101 Concept:** A VPC (Virtual Private Cloud) is your own private, logically-isolated data center inside AWS. It's the foundation of everything. Subnets are just smaller rooms inside that data center. 'Public' subnets have a door directly to the internet (Internet Gateway), while 'Private' subnets do not. 
+
+> [!TIP]
+> **The DevSecOps Angle:** We place all our worker nodes, databases, and application pods in the **Private Subnets**. They can reach out to the internet to download packages via a NAT Gateway, but no hacker can initiate a connection directly to them. Our Public Subnets are strictly reserved for Load Balancers (ALBs) or tightly monitored Bastion Hosts. This hardens our boundary defense drastically.
+
 The VPC module provisions a production-ready network infrastructure on AWS with the following components:
 
 - **VPC**: Main network container with configurable CIDR block
@@ -44,71 +50,82 @@ This module follows AWS best practices for high availability, security, and scal
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              VPC                                         │
-│                        10.0.0.0/16                                       │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                      Internet Gateway                              │  │
-│  │                           │                                        │  │
-│  │  ┌────────────────────────┴────────────────────────────────┐      │  │
-│  │  │                   Public Route Table                     │      │  │
-│  │  │              0.0.0.0/0 → IGW                             │      │  │
-│  │  └────────────────────────┬────────────────────────────────┘      │  │
-│  │                           │                                        │  │
-│  │  ┌─────────────┐  ┌───────┴────────┐  ┌─────────────┐             │  │
-│  │  │  Public     │  │   Public       │  │  Public     │             │  │
-│  │  │  Subnet 1   │  │   Subnet 2     │  │  Subnet N   │             │  │
-│  │  │  (AZ-a)     │  │   (AZ-b)       │  │  (AZ-n)     │             │  │
-│  │  └──────┬──────┘  └────────┬───────┘  └──────┬──────┘             │  │
-│  │         │                  │                  │                     │  │
-│  │         └──────────────────┼──────────────────┘                     │  │
-│  │                            │                                        │  │
-│  │                    ┌───────┴───────┐                                │  │
-│  │                    │  NAT Gateway  │                                │  │
-│  │                    └───────┬───────┘                                │  │
-│  │                            │                                        │  │
-│  │  ┌─────────────────────────┴────────────────────────────────┐      │  │
-│  │  │                  Private Route Table                      │      │  │
-│  │  │             0.0.0.0/0 → NAT GW                            │      │  │
-│  │  └─────────────────────────┬────────────────────────────────┘      │  │
-│  │                            │                                        │  │
-│  │  ┌─────────────┐  ┌────────┴────────┐  ┌─────────────┐             │  │
-│  │  │  Private    │  │   Private       │  │  Private    │             │  │
-│  │  │  Subnet 1   │  │   Subnet 2      │  │  Subnet N   │             │  │
-│  │  │  (AZ-a)     │  │   (AZ-b)        │  │  (AZ-n)     │             │  │
-│  │  └─────────────┘  └─────────────────┘  └─────────────┘             │  │
-│  │                                                                    │  │
-│  │  ┌────────────────────────────────────────────────────────────┐   │  │
-│  │  │              Network ACL (Public Subnets)                   │   │  │
-│  │  │         Stateful Ingress/Egress Rules                       │   │  │
-│  │  └────────────────────────────────────────────────────────────┘   │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph VPC ["VPC (10.0.0.0/16)"]
+        direction TB
+
+        IGW["Internet Gateway"]
+
+        subgraph PublicRT ["Public Route Table"]
+            direction LR
+            PublicRT_Route["0.0.0.0/0 → IGW"]
+        end
+
+        subgraph PublicSubnets ["Public Subnets"]
+            direction LR
+            PublicSubnet1["Public Subnet 1<br/>(AZ-a)<br/>10.0.1.0/24"]
+            PublicSubnet2["Public Subnet 2<br/>(AZ-b)<br/>10.0.2.0/24"]
+            PublicSubnetN["Public Subnet N<br/>(AZ-n)<br/>10.0.3.0/24"]
+        end
+
+        NAT["NAT Gateway"]
+
+        subgraph PrivateRT ["Private Route Table"]
+            direction LR
+            PrivateRT_Route["0.0.0.0/0 → NAT"]
+        end
+
+        subgraph PrivateSubnets ["Private Subnets"]
+            direction LR
+            PrivateSubnet1["Private Subnet 1<br/>(AZ-a)<br/>10.0.10.0/24"]
+            PrivateSubnet2["Private Subnet 2<br/>(AZ-b)<br/>10.0.11.0/24"]
+            PrivateSubnetN["Private Subnet N<br/>(AZ-n)<br/>10.0.12.0/24"]
+        end
+
+        NACL["Network ACL<br/>(Public Subnets)"]
+    end
+
+    IGW --> PublicRT
+    PublicRT --> PublicSubnets
+    PublicSubnets --> NAT
+    NAT --> PrivateRT
+    PrivateRT --> PrivateSubnets
+    PublicSubnets -.-> NACL
+
+    style VPC fill:#1a1a2e,stroke:#0f3460,stroke-width:3px,color:#fff
+    style IGW fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px,color:#fff
+    style NAT fill:#ffd43b,stroke:#f08c00,stroke-width:2px,color:#333
+    style PublicRT fill:#4ecdc4,stroke:#0b7285,stroke-width:2px,color:#fff
+    style PrivateRT fill:#95e1d3,stroke:#0b7285,stroke-width:2px,color:#333
+    style PublicSubnets fill:#a8e6cf,stroke:#2d6a4f,stroke-width:2px,color:#333
+    style PrivateSubnets fill:#dcedc1,stroke:#5c7c34,stroke-width:2px,color:#333
+    style NACL fill:#dda0dd,stroke:#862e9c,stroke-width:2px,color:#fff
 ```
 
 ### Traffic Flow
 
-```
-Internet
-    │
-    ▼
-Internet Gateway
-    │
-    ▼
-Public Subnet (Load Balancer, Bastion)
-    │
-    ▼
-Private Subnet (Application Servers)
-    │
-    ▼
-Database / Cache (Private Subnet)
-    │
-    ▼
-NAT Gateway (for outbound traffic)
-    │
-    ▼
-Internet
+```mermaid
+sequenceDiagram
+    participant Internet
+    participant IGW as Internet Gateway
+    participant PublicSubnet as Public Subnet<br/>(ALB, Bastion)
+    participant PrivateSubnet as Private Subnet<br/>(Applications)
+    participant NAT as NAT Gateway
+    participant Database as Database/Cache
+
+    Internet->>IGW: Inbound Traffic
+    IGW->>PublicSubnet: Route to ALB/Bastion
+    PublicSubnet->>PrivateSubnet: Forward to Application
+    PrivateSubnet->>Database: Query Data
+
+    Database->>PrivateSubnet: Response
+    PrivateSubnet->>NAT: Outbound Traffic
+    NAT->>PublicSubnet: Route to IGW
+    PublicSubnet->>IGW: Exit VPC
+    IGW->>Internet: Response to Client
+
+    Note over IGW,NAT: All traffic flows through<br/>VPC route tables
 ```
 
 ---
@@ -210,7 +227,7 @@ module "vpc" {
 | `project_name`            | `string`       | Name of the project. Used in resource naming and tagging.            | `"finishline"`                     |
 | `environment`             | `string`       | Environment name. Determines resource naming and access levels.      | `"dev"`, `"stage"`, `"prod"`       |
 | `managed_by`              | `string`       | Team or department managing this resource. Used for cost allocation. | `"platform-team"`                  |
-| `aws_region`              | `string`       | AWS region where resources will be created.                          | `"us-west-2"`                      |
+| `aws_region`              | `string`       | AWS region where resources will be created.                          | `"us-east-1"`                      |
 | `vpc_cidr`                | `string`       | CIDR block for the VPC. Should be a private IP range.                | `"10.0.0.0/16"`                    |
 | `public_subnets_cidr`     | `list(string)` | List of CIDR blocks for public subnets. Must be within VPC CIDR.     | `["10.0.1.0/24", "10.0.2.0/24"]`   |
 | `private_subnets_cidr`    | `list(string)` | List of CIDR blocks for private subnets. Must be within VPC CIDR.    | `["10.0.10.0/24", "10.0.11.0/24"]` |
@@ -472,29 +489,16 @@ The module automatically applies the following tags to all resources:
 
 ### Security Layers
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Layer 1: VPC Boundary                                        │
-│ - Isolated network environment                               │
-└─────────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────▼─────────────────────────────────────┐
-│ Layer 2: Network ACLs (Stateless)                              │
-│ - Subnet-level firewall                                        │
-│ - Ingress/Egress rules                                         │
-└─────────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────▼─────────────────────────────────────┐
-│ Layer 3: Security Groups (Stateful)                            │
-│ - Instance-level firewall                                      │
-│ - Ingress/Egress rules                                         │
-└─────────────────────────────────────────────────────────────┘
-                          │
-┌─────────────────────────▼─────────────────────────────────────┐
-│ Layer 4: Instance OS Firewall                                  │
-│ - iptables/nftables                                            │
-│ - Application-level security                                   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Layer1[Layer 1: VPC Boundary<br/>- Isolated network environment]
+    Layer2[Layer 2: Network ACLs Stateless<br/>- Subnet-level firewall<br/>- Ingress/Egress rules]
+    Layer3[Layer 3: Security Groups Stateful<br/>- Instance-level firewall<br/>- Ingress/Egress rules]
+    Layer4[Layer 4: Instance OS Firewall<br/>- iptables/nftables<br/>- Application-level security]
+    
+    Layer1 --> Layer2
+    Layer2 --> Layer3
+    Layer3 --> Layer4
 ```
 
 ### Best Practices

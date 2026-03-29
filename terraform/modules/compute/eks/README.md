@@ -31,9 +31,15 @@ This Terraform module creates and manages Amazon Elastic Kubernetes Service (EKS
 
 ## Overview
 
+> [!NOTE] 
+> **The 101 Concept:** Amazon EKS (Elastic Kubernetes Service) is like a highly-trained conductor for a massive orchestra of containers. Instead of you having to manually install, operate, and maintain the Kubernetes control plane across multiple virtual machines, AWS does the heavy lifting for you. It ensures your cluster is highly available, secure, and always running.
+
+> [!TIP]
+> **The DevSecOps Angle:** In this module, we deliberately separate our Node Groups (the EC2 servers where your apps run) from our Control Plane. We also enforce private API endpoints where possible, meaning hackers on the public internet cannot even *see* our Kubernetes master node. Finally, we implement **IRSA** (IAM Roles for Service Accounts) so that pods get their own individual security badges, rather than sharing a master skeleton key.
+
 The EKS module provides a production-ready Kubernetes cluster on AWS with the following capabilities:
 
-- **Managed Control Plane** - AWS manages the Kubernetes control plane
+- **Managed Control Plane** - AWS manages the Kubernetes control plane operations (etcd, API server).
 - **Managed Node Groups** - Automated EC2 provisioning and lifecycle management
 - **EKS Access Entries** - IAM-based cluster access control
 - **IRSA Support** - IAM Roles for Kubernetes Service Accounts

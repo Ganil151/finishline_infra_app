@@ -38,8 +38,9 @@ inputs = {
   is_eks_nodegroup_role_enabled = true
 
   
-  eks_oidc_url             = ""  
-  oidc_thumbprint          = ""  
+  # Dynamically fetch the EKS OIDC URL via Terragrunt run_cmd, preventing Terraform from dropping the IAM Role creation count sequence.
+  eks_oidc_url             = trimspace(run_cmd("--terragrunt-quiet", "aws", "eks", "describe-cluster", "--name", "finishline-infra-app-dev-eks", "--region", "us-east-1", "--query", "cluster.identity.oidc.issuer", "--output", "text"))
+  oidc_thumbprint          = "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
   eks_oidc_namespace       = "default"
   eks_oidc_service_account = ""
   eks_oidc_subject         = "" 

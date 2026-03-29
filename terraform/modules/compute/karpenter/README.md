@@ -4,6 +4,12 @@ Deploys Karpenter autoscaler for Kubernetes-native node provisioning on EKS clus
 
 ## Overview
 
+> [!NOTE] 
+> **The 101 Concept:** Karpenter is a smart auto-scaler for Kubernetes. Instead of waiting for traditional AWS AutoScaling Groups to spin up identical, pre-configured servers when your apps need more juice, Karpenter looks precisely at what your incoming pods need (CPU, memory, architecture) and instantly buys the cheapest matching EC2 instance directly from the AWS API.
+
+> [!TIP]
+> **The DevSecOps Angle:** Karpenter enhances security by aggressively terminating instances that are no longer needed, reducing our fleet's attack surface. It also allows us to strictly enforce node-level IAM roles (giving EC2s only the permissions they need) and seamlessly supports Bottlerocket (a hardened OS built specifically for containers with an immutable root filesystem).
+
 This module manages:
 
 - **CRDs** - Installs Karpenter Custom Resource Definitions (EC2NodeClass, NodePool, NodeClaim) using `kubectl_manifest`

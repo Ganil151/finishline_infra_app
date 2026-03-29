@@ -43,60 +43,25 @@ The compute modules provide production-ready AWS compute infrastructure followin
 
 ### Module Dependencies
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Compute Modules                               │
-│                                                                  │
-│  ┌─────────────┐                                                │
-│  │   Jumphost  │  (Uses: VPC, Subnet, SG, Key Pair)            │
-│  └─────────────┘                                                │
-│                                                                  │
-│  ┌─────────────┐                                                │
-│  │     EKS     │                                                │
-│  │  (Cluster)  │                                                │
-│  └──────┬──────┘                                                │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌─────────────┐                                                │
-│  │  Karpenter  │  (Uses: EKS, IAM, VPC, SG)                    │
-│  └─────────────┘                                                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Jumphost[Jumphost<br/>Uses: VPC, Subnet, SG, Key Pair]
+    EKS[EKS Cluster]
+    Karpenter[Karpenter<br/>Uses: EKS, IAM, VPC, SG]
+    
+    EKS --> Karpenter
 ```
 
 ### Cross-Module Dependencies
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        Complete Infrastructure Stack                      │
-└──────────────────────────────────────────────────────────────────────────┘
-
-                    ┌─────────────────────┐
-                    │   Security Modules   │
-                    │                     │
-                    │ • IAM Roles         │
-                    │ • OIDC Provider     │
-                    │ • Key Pairs         │
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │  Networking Modules  │
-                    │                     │
-                    │ • VPC               │
-                    │ • Subnets           │
-                    │ • Security Groups   │
-                    │ • ALB               │
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   Compute Modules    │
-                    │                     │
-                    │ • EKS Cluster       │
-                    │ • Karpenter         │
-                    │ • Jumphost          │
-                    └─────────────────────┘
+```mermaid
+graph TD
+    Security[Security Modules<br/>• IAM Roles<br/>• OIDC Provider<br/>• Key Pairs]
+    Networking[Networking Modules<br/>• VPC<br/>• Subnets<br/>• Security Groups<br/>• ALB]
+    Compute[Compute Modules<br/>• EKS Cluster<br/>• Karpenter<br/>• Jumphost]
+    
+    Security --> Networking
+    Networking --> Compute
 ```
 
 ---
@@ -270,68 +235,49 @@ module "jumphost" {
 
 ### High-Level Architecture
 
-```
-                                    ┌─────────────────────────┐
-                                    │   Internet              │
-                                    └───────────┬─────────────┘
-                                                │
-                        ┌───────────────────────┼───────────────────────┐
-                        │                       │                       │
-                        ▼                       ▼                       ▼
-            ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
-            │   Jumphost (EC2)    │ │   EKS Control       │ │   ALB (Public)      │
-            │   Public Subnet     │ │   Plane             │ │   Public Subnets    │
-            │   SSH Access        │ │   Private Access    │ │   HTTPS Traffic     │
-            └─────────┬───────────┘ └──────────┬──────────┘ └─────────────────────┘
-                      │                        │
-                      │ SSH                    │ Kubernetes API
-                      ▼                        ▼
-            ┌─────────────────────────────────────────────────────────────────┐
-            │                    VPC (Private Network)                         │
-            │                                                                  │
-            │  ┌────────────────────────────────────────────────────────────┐ │
-            │  │              Private Subnets                                │ │
-            │  │                                                             │ │
-            │  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │ │
-            │  │  │  EKS Nodes    │  │  Karpenter    │  │  Applications │   │ │
-            │  │  │  (Managed)    │  │  Nodes        │  │  (Pods)       │   │ │
-            │  │  │               │  │  (Dynamic)    │  │               │   │ │
-            │  │  └───────────────┘  └───────────────┘  └───────────────┘   │ │
-            │  │                                                             │ │
-            │  └────────────────────────────────────────────────────────────┘ │
-            └─────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────────┐
-                    │   Security Module (IAM)           │
-                    │                                   │
-                    │ • Cluster Role                    │
-                    │ • Node Role                       │
-                    │ • Karpenter Roles                 │
-                    │ • OIDC Provider                   │
-                    └───────────────────────────────────┘
+```mermaid
+graph TB
+    Internet((Internet))
+    Jumphost[Jumphost EC2<br/>Public Subnet<br/>SSH Access]
+    EKS_CP[EKS Control Plane<br/>Private Access]
+    ALB[ALB Public<br/>Public Subnets<br/>HTTPS Traffic]
+    
+    Internet --> Jumphost
+    Internet --> EKS_CP
+    Internet --> ALB
+    
+    subgraph VPC [VPC Private Network]
+        subgraph Subnets [Private Subnets]
+            Nodes[EKS Nodes<br/>Managed]
+            Karpenter[Karpenter Nodes<br/>Dynamic]
+            Pods[Applications<br/>Pods]
+        end
+    end
+    
+    Jumphost -- SSH --> VPC
+    EKS_CP -- K8s API --> VPC
+    
+    subgraph IAM [Security Module IAM]
+        Roles[• Cluster Role<br/>• Node Role<br/>• Karpenter Roles<br/>• OIDC Provider]
+    end
+    
+    VPC --> IAM
 ```
 
 ### Resource Flow
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Security    │────►│  Networking  │────►│   Compute    │
-│  (IAM, Keys) │     │ (VPC, SG)    │     │ (EKS, K8s)   │
-│              │     │              │     │              │
-│ • IAM Roles  │     │ • VPC        │     │ • EKS        │
-│ • OIDC       │     │ • Subnets    │     │ • Nodegroup  │
-│ • Key Pairs  │     │ • SG Rules   │     │ • Karpenter  │
-│              │     │ • Tags       │     │ • Jumphost   │
-└──────────────┘     └──────────────┘     └──────────────┘
-       │                    │                    │
-       └────────────────────┴────────────────────┘
-                            │
-                            ▼
-                   ┌─────────────────┐
-                   │  Kubernetes     │
-                   │  Workloads      │
-                   └─────────────────┘
+```mermaid
+graph LR
+    Sec[Security<br/>IAM, Keys]
+    Net[Networking<br/>VPC, SG]
+    Comp[Compute<br/>EKS, K8s]
+    Work[Kubernetes<br/>Workloads]
+    
+    Sec --> Net
+    Net --> Comp
+    Comp --> Work
+    Sec -.-> Work
+    Net -.-> Work
 ```
 
 ---
@@ -414,14 +360,22 @@ The module uses `kubectl_manifest` instead of `kubernetes_manifest` to avoid pla
 
 **Resource Dependency Chain:**
 
-```
-kubectl_manifest.karpenter_crds
-    └── kubectl_manifest.karpenter_crds_nodepool
-        └── kubectl_manifest.karpenter_crds_nodeclaim
-            └── helm_release.karpenter
-                └── time_sleep (60s)
-                    └── kubectl_manifest.ec2_node_class
-                        └── kubectl_manifest.node_pool
+```mermaid
+graph TD
+    CRDs[kubectl_manifest.karpenter_crds]
+    CRDPool[kubectl_manifest.karpenter_crds_nodepool]
+    CRDClaim[kubectl_manifest.karpenter_crds_nodeclaim]
+    Helm[helm_release.karpenter]
+    Sleep[time_sleep 60s]
+    Class[kubectl_manifest.ec2_node_class]
+    Pool[kubectl_manifest.node_pool]
+    
+    CRDs --> CRDPool
+    CRDPool --> CRDClaim
+    CRDClaim --> Helm
+    Helm --> Sleep
+    Sleep --> Class
+    Class --> Pool
 ```
 
 **Inputs from Other Modules:**
@@ -496,17 +450,6 @@ key_name         # SSH key pair name
 
 ## Module Relationships
 
-### Dependency Chain
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Module Dependency Graph                       │
-└──────────────────────────────────────────────────────────────────┘
-
-                    ┌─────────────┐
-                    │   Security   │
-                    │   Modules    │
-                    └──────┬──────┘
                            │
                            ▼
                     ┌─────────────┐
@@ -744,26 +687,31 @@ See the [Complete Usage Example](#complete-usage-example) section above for a fu
 
 ### Recommended Deployment Sequence
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Deployment Order                              │
-└─────────────────────────────────────────────────────────────────┘
-
-Phase 1: Security Foundation
-├─ 1.1: security/iam        → IAM roles and policies
-└─ 1.2: security/key_pair   → SSH key pairs
-
-Phase 2: Networking Infrastructure
-├─ 2.1: networking/vpc      → VPC, subnets, gateways
-└─ 2.2: networking/sg       → Security groups
-
-Phase 3: Compute Resources
-├─ 3.1: compute/eks         → EKS cluster and node group
-├─ 3.2: compute/jumphost    → Bastion host (optional)
-└─ 3.3: compute/karpenter   → Karpenter autoscaler
-
-Phase 4: Application Deployment
-└─ 4.x: applications        → Deploy workloads to EKS
+```mermaid
+graph TD
+    subgraph P1 [Phase 1: Security Foundation]
+        1.1[security/iam]
+        1.2[security/key_pair]
+    end
+    
+    subgraph P2 [Phase 2: Networking Infrastructure]
+        2.1[networking/vpc]
+        2.2[networking/sg]
+    end
+    
+    subgraph P3 [Phase 3: Compute Resources]
+        3.1[compute/eks]
+        3.2[compute/jumphost]
+        3.3[compute/karpenter]
+    end
+    
+    subgraph P4 [Phase 4: Application Deployment]
+        4.1[applications]
+    end
+    
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
 ```
 
 ### Terragrunt Deployment

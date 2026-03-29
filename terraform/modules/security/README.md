@@ -40,33 +40,25 @@ The security modules provide production-ready AWS identity and access management
 
 ### Module Dependencies
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Security Modules                              │
-│                                                                  │
-│  ┌─────────────┐                                                │
-│  │  Key Pair   │  (Independent - SSH Access)                   │
-│  └─────────────┘                                                │
-│                                                                  │
-│  ┌─────────────┐                                                │
-│  │     IAM     │                                                │
-│  │  (Identity) │                                                │
-│  └──────┬──────┘                                                │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │  IAM Components:                                         │    │
-│  │  • EKS Cluster Role                                      │    │
-│  │  • EKS Nodegroup Role                                    │    │
-│  │  • OIDC Provider                                         │    │
-│  │  • OIDC Role (for IRSA)                                  │    │
-│  │  • Karpenter Controller Role                             │    │
-│  │  • Karpenter Node Role                                   │    │
-│  │  • EBS CSI Driver Role                                   │    │
-│  │  • S3 Access Policies                                    │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Security_Modules [Security Modules]
+        KeyPair[Key Pair Module<br/>Independent - SSH Access]
+        IAM[IAM Module<br/>Identity]
+        
+        subgraph IAM_Components [IAM Components]
+            EKSCluster[EKS Cluster Role]
+            EKSNodeGroup[EKS Nodegroup Role]
+            OIDCProvider[OIDC Provider]
+            OIDCRole[OIDC Role for IRSA]
+            KController[Karpenter Controller Role]
+            KNode[Karpenter Node Role]
+            EBSCSI[EBS CSI Driver Role]
+            S3Policy[S3 Access Policies]
+        end
+        
+        IAM --> IAM_Components
+    end
 ```
 
 ---
@@ -75,109 +67,63 @@ The security modules provide production-ready AWS identity and access management
 
 ### High-Level Architecture
 
-```
-                                    ┌─────────────────────────┐
-                                    │   Kubernetes Cluster    │
-                                    │        (EKS)            │
-                                    └───────────┬─────────────┘
-                                                │
-                        ┌───────────────────────┼───────────────────────┐
-                        │                       │                       │
-                        ▼                       ▼                       ▼
-            ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
-            │  Karpenter          │ │  EBS CSI Driver     │ │  Custom Workload    │
-            │  Controller         │ │  Controller         │ │  Service Account    │
-            │  Service Account    │ │  Service Account    │ │                     │
-            │  (IRSA)             │ │  (IRSA)             │ │  (IRSA)             │
-            └─────────┬───────────┘ └─────────┬───────────┘ └─────────┬───────────┘
-                      │                       │                       │
-                      ▼                       ▼                       ▼
-            ┌─────────────────────────────────────────────────────────────────────┐
-            │                    IAM Module (IRSA Configuration)                   │
-            │                                                                      │
-            │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
-            │  │ Karpenter        │  │ EBS CSI Driver   │  │ OIDC Role        │   │
-            │  │ Controller Role  │  │ Role             │  │ (Generic)        │   │
-            │  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
-            │                                                                      │
-            │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
-            │  │ Karpenter        │  │ S3 Access        │  │ OIDC Provider    │   │
-            │  │ Node Role        │  │ Policy           │  │                  │   │
-            │  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
-            └─────────────────────────────────────────────────────────────────────┘
-                      │                       │                       │
-                      ▼                       ▼                       ▼
-            ┌─────────────────────────────────────────────────────────────────────┐
-            │                    AWS Services                                      │
-            │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-            │  │    EC2       │  │     S3       │  │     EBS      │              │
-            │  │  Instances   │  │   Buckets    │  │   Volumes    │              │
-            │  └──────────────┘  └──────────────┘  └──────────────┘              │
-            └─────────────────────────────────────────────────────────────────────┘
-
-            ┌─────────────────────────────────────────────────────────────────────┐
-            │                    Key Pair Module (SSH Access)                      │
-            │                                                                      │
-            │  ┌──────────────────┐         ┌──────────────────┐                  │
-            │  │  RSA 4096-bit    │────────►│  AWS Key Pair    │                  │
-            │  │  Private Key     │         │  (Public Key)    │                  │
-            │  │  (Local File)    │         │                  │                  │
-            │  └──────────────────┘         └──────────────────┘                  │
-            │                                        │                             │
-            │                                        ▼                             │
-            │                              ┌──────────────────┐                   │
-            │                              │  EC2 Instances   │                   │
-            │                              │  SSH Access      │                   │
-            │                              └──────────────────┘                   │
-            └─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    EKS[Kubernetes Cluster<br/>EKS]
+    
+    KarpSA[Karpenter Controller<br/>Service Account IRSA]
+    EBSSA[EBS CSI Driver<br/>Controller Service Account IRSA]
+    WorkSA[Custom Workload<br/>Service Account IRSA]
+    
+    EKS --> KarpSA
+    EKS --> EBSSA
+    EKS --> WorkSA
+    
+    subgraph IAM_Module [IAM Module - IRSA Configuration]
+        KarpRole[Karpenter Controller Role]
+        EBSRole[EBS CSI Driver Role]
+        OIDCRole[OIDC Role Generic]
+        KNodeRole[Karpenter Node Role]
+        S3Policy[S3 Access Policy]
+        OIDCProv[OIDC Provider]
+    end
+    
+    KarpSA --> IAM_Module
+    EBSSA --> IAM_Module
+    WorkSA --> IAM_Module
+    
+    subgraph AWS_Services [AWS Services]
+        EC2[EC2 Instances]
+        S3[S3 Buckets]
+        EBS[EBS Volumes]
+    end
+    
+    IAM_Module --> AWS_Services
+    
+    subgraph KeyPair_Module [Key Pair Module - SSH Access]
+        PrivKey[RSA 4096-bit Private Key<br/>Local File]
+        PubKey[AWS Key Pair<br/>Public Key]
+        SSHAccess[EC2 Instances<br/>SSH Access]
+        
+        PrivKey --> PubKey
+        PubKey --> SSHAccess
+    end
 ```
 
 ### IAM Trust Relationships
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         IAM Trust Relationship Flow                              │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant Pod as Kubernetes Pod / AWS SDK
+    participant EKS as EKS OIDC Provider
+    participant IAM as IAM Role (IRSA)
+    participant STS as AWS STS (Temporary Credentials)
 
-                    ┌─────────────────────────────────────┐
-                    │     Kubernetes Service Account      │
-                    │  namespace: karpenter               │
-                    │  name: karpenter-controller         │
-                    └─────────────────┬───────────────────┘
-                                      │
-                                      │ 1. Pod requests AWS credentials
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │     EKS OIDC Provider               │
-                    │  (arn:aws:iam::ACCOUNT:oidc-provider/oidc.eks.REGION.amazonaws.com/id/XXX) │
-                    └─────────────────┬───────────────────┘
-                                      │
-                                      │ 2. Trust Policy Validation
-                                      │    - sub: system:serviceaccount:namespace:name
-                                      │    - aud: sts.amazonaws.com
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │     IAM Role (IRSA)                 │
-                    │  - Trust: OIDC Provider             │
-                    │  - Permissions: EC2, SSM, Pricing   │
-                    └─────────────────┬───────────────────┘
-                                      │
-                                      │ 3. AssumeRoleWithWebIdentity
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │     AWS STS                         │
-                    │  Temporary Credentials              │
-                    │  - Access Key ID                    │
-                    │  - Secret Access Key                │
-                    │  - Session Token                    │
-                    └─────────────────┬───────────────────┘
-                                      │
-                                      │ 4. Credentials injected to Pod
-                                      ▼
-                    ┌─────────────────────────────────────┐
-                    │     AWS SDK in Pod                  │
-                    │  Automatic credential discovery     │
-                    └─────────────────────────────────────┘
+    Pod->>EKS: 1. Pod requests AWS credentials (via Web Identity Token)
+    EKS-->>IAM: 2. Trust Policy Validation (sub, aud)
+    IAM->>STS: 3. AssumeRoleWithWebIdentity call
+    STS-->>Pod: 4. Temporary Credentials injected (AKID, Secret Key, Session Token)
+    Note right of Pod: Automatic discovery by AWS SDK
 ```
 
 ---
@@ -291,46 +237,32 @@ public_key          # Public key in OpenSSH format
 
 ### Dependency Chain
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Module Dependency Graph                       │
-└──────────────────────────────────────────────────────────────────┘
-
-                    ┌─────────────┐
-                    │  Key Pair   │
-                    │   Module    │
-                    │ (Independent)│
-                    └─────────────┘
-
-                    ┌─────────────┐
-                    │     IAM     │
-                    │   Module    │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-              ▼            ▼            ▼
-        ┌───────────┐ ┌───────────┐ ┌───────────┐
-        │   EKS     │ │ Karpenter │ │   EKS     │
-        │  Cluster  │ │  Nodes    │ │  Nodes    │
-        │   Role    │ │   Role    │ │  Nodegroup│
-        └───────────┘ └───────────┘ └───────────┘
-              │            │            │
-              └────────────┴────────────┘
-                           │
-                           ▼
-                    ┌─────────────────┐
-                    │  OIDC Provider  │
-                    │   (for IRSA)    │
-                    └────────┬────────┘
-                             │
-                ┌────────────┼────────────┐
-                │            │            │
-                ▼            ▼            ▼
-          ┌───────────┐ ┌───────────┐ ┌───────────┐
-          │ Karpenter │ │  EBS CSI  │ │  Custom   │
-          │ Controller│ │  Driver   │ │ Workloads │
-          └───────────┘ └───────────┘ └───────────┘
+```mermaid
+graph TD
+    KP[Key Pair Module<br/>Independent]
+    IAM[IAM Module]
+    
+    EKS_Role[EKS Cluster Role]
+    KNode_Role[Karpenter Node Role]
+    ENode_Role[EKS Nodegroup Role]
+    
+    IAM --> EKS_Role
+    IAM --> KNode_Role
+    IAM --> ENode_Role
+    
+    OIDC[OIDC Provider<br/>for IRSA]
+    
+    EKS_Role --> OIDC
+    KNode_Role --> OIDC
+    ENode_Role --> OIDC
+    
+    KController[Karpenter Controller]
+    EBSCSI[EBS CSI Driver]
+    Workloads[Custom Workloads]
+    
+    OIDC --> KController
+    OIDC --> EBSCSI
+    OIDC --> Workloads
 ```
 
 ### Data Flow Between Modules
@@ -450,40 +382,18 @@ module "key_pair" {
 
 ### IAM Security Layers
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ Layer 1: AWS Account Boundary                                        │
-│ - Root account protection                                            │
-│ - Service Control Policies (SCPs)                                    │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────▼───────────────────────────────────────┐
-│ Layer 2: IAM Policies (Permissions)                                  │
-│ - Managed policies (AWS managed, Customer managed)                   │
-│ - Inline policies                                                    │
-│ - Permission boundaries                                              │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────▼───────────────────────────────────────┐
-│ Layer 3: IAM Roles (Trust Relationships)                             │
-│ - Role trust policies (who can assume)                               │
-│ - Temporary credentials via STS                                      │
-│ - Session duration limits                                            │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────▼───────────────────────────────────────┐
-│ Layer 4: IRSA (Kubernetes Integration)                               │
-│ - Service account annotations                                        │
-│ - OIDC provider trust                                                │
-│ - Namespace isolation                                                │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────▼───────────────────────────────────────┐
-│ Layer 5: Resource-Level Permissions                                  │
-│ - S3 bucket policies                                                 │
-│ - KMS key policies                                                   │
-│ - Security group rules                                               │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    L1[Layer 1: AWS Account Boundary<br/>Root protection, SCPs]
+    L2[Layer 2: IAM Policies<br/>Managed, Inline, Boundaries]
+    L3[Layer 3: IAM Roles<br/>Trust Policies, Temporary Credentials via STS]
+    L4[Layer 4: IRSA<br/>Service Account Annotations, OIDC trust]
+    L5[Layer 5: Resource-Level Permissions<br/>Bucket Policies, KMS Key Policies]
+    
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L4 --> L5
 ```
 
 ### Principle of Least Privilege
@@ -683,31 +593,22 @@ IRSA (IAM Roles for Service Accounts) allows Kubernetes service accounts to assu
 
 ### How IRSA Works
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        IRSA Flow Diagram                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-
-1. Create Kubernetes Service Account
-   └─> Annotate with IAM role ARN
-
-2. Create IAM Role with OIDC Trust
-   └─> Trust policy: OIDC provider + service account subject
-
-3. Deploy Pod with Service Account
-   └─> Pod inherits service account
-
-4. Pod Requests AWS Credentials
-   └─> AWS SDK discovers IRSA environment variables
-
-5. EKS Injects Web Identity Token
-   └─> Token mounted at /var/run/secrets/eks.amazonaws.com/serviceaccount/token
-
-6. Pod Assumes IAM Role
-   └─> STS AssumeRoleWithWebIdentity
-
-7. Pod Receives Temporary Credentials
-   └─> Access Key, Secret Key, Session Token
+```mermaid
+graph TD
+    SA[1. Create Kubernetes Service Account<br/>Annotate with IAM role ARN]
+    Role[2. Create IAM Role with OIDC Trust<br/>Trust policy: OIDC provider + SA subject]
+    Pod[3. Deploy Pod with Service Account<br/>Pod inherits service account]
+    Req[4. Pod Requests AWS Credentials<br/>AWS SDK discovers IRSA environment variables]
+    Token[5. EKS Injects Web Identity Token<br/>Token mounted automatically]
+    Assume[6. Pod Assumes IAM Role<br/>STS AssumeRoleWithWebIdentity]
+    Creds[7. Pod Receives Temporary Credentials<br/>Access Key, Secret Key, Session Token]
+    
+    SA --> Role
+    Role --> Pod
+    Pod --> Req
+    Req --> Token
+    Token --> Assume
+    Assume --> Creds
 ```
 
 ### Configuring IRSA with the IAM Module

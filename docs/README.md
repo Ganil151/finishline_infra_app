@@ -1,90 +1,52 @@
-# EKS Bootstraps Module
+# FinishLine Infrastructure Documentation Hub
 
-This module provides EKS managed node groups, bootstrap addons, and Karpenter configuration for Kubernetes clusters.
+> [!NOTE]
+> **The 101 Concept:** Welcome to the brain of the FinishLine Infrastructure project! If Terraform and Terragrunt are the engine and steering wheel of our environments, this folder is the driver's manual. We do not just build infrastructure here; we document *why* we built it, *how* to operate it, and *what* to do when it breaks.
+>
+> If you are a new DevSecOps engineer onboarding to this repository, **start here.**
 
-## Overview
+> [!TIP]
+> **The DevSecOps Angle:** Security isn't just about firewalls and IAM roles; it's about **traceability and operational clarity**. When an incident occurs in production at 3:00 AM, ambiguous documentation is a critical vulnerability. Our guides are written pedagogically—explaining exactly what underlying AWS/Kubernetes APIs a CLI command triggers, ensuring you operate with total confidence and zero guesswork.
 
-The bootstraps module handles:
+---
 
-- **EKS Managed Node Groups** - Auto-scaling node groups for running Kubernetes workloads
-- **Bootstrap Addons** - Core EKS addons (vpc-cni, coredns, kube-proxy)
-- **Karpenter** - Optional auto-scaling solution for Kubernetes
+## Directory Index
 
-## Resources Created
+Please refer to the following guides based on your current mission:
 
-### IAM Resources
+### 1. 🚀 Deployment & Operations
+**File:** [RUNBOOK.md](./RUNBOOK.md)
 
-- IAM Role for EKS Node Group
-- IAM Instance Profile for nodes
-- IAM Role and Policy for Karpenter (optional)
+This is your primary operational manual. It covers:
+*   The exact step-by-step dependency sequence for deploying the `vpc`, `security`, and `compute` modules via Terragrunt block resolution.
+*   Pre-launch security hardening checklists (verifying open CIDRs, validating IAM strictness).
+*   Pedagogical breakdowns of exactly how `aws sts get-caller-identity` negotiates trust and how `kubectl` natively authenticates via `~/.kube/config`.
 
-### Kubernetes Resources
+### 2. 🧯 Incident Response & Troubleshooting
+**File:** [KARPENTER_FIXES.md](./KARPENTER_FIXES.md)
 
-- EKS Managed Node Group
-- EKS Addons (vpc-cni, coredns, kube-proxy)
+If the `karpenter` EC2-auto-provisioner fails to natively schedule Kubernetes pods, consult this guide. It covers:
+*   Debugging AWS STS Trust Relationships and IAM OIDC Provider loops bridging EKS to AWS.
+*   IRSA (IAM Roles for Service Accounts) logic flow.
+*   CrashLoopBackOff remediations for the Karpenter Helm Release.
 
-## Usage
+### 3. 🔍 Security & Compliance
+**File:** [AUDIT_LOG.md](./AUDIT_LOG.md)
 
-```hcl
-terraform {
-  source = "../../modules/compute/bootstraps"
-}
+The historical log of infrastructure compliance audits, vulnerability remediations, and architectural pivots required to pass strict industrial-grade security reviews before migrating code from `dev` to `prod`.
 
-include {
-  path = find_in_parent_folders("root.hcl")
-}
+### 4. 📚 Project Specifications
+*   **Original Challenge Set (Part 1):** [Finishline_Infra_Project_Assignment.pdf](./Finishline_Infra_Project_Assignment.pdf)
+*   **Karpenter Expansion (Part 2):** [Finishline_Karpenter_Project.pdf](./Finishline_Karpenter_Project.pdf)
 
-# Dependency on EKS cluster
-dependency "eks" {
-  config_path = "../eks"
-}
+---
 
-inputs = {
-  project_name  = "finishline-infra-app"
-  environment   = "dev"
-  managed_by    = "finishline-infra-team"
-  aws_region    = "us-east-1"
+## How to Read This Repository
 
-  cluster_name = "finishline-dev-eks"
+Each underlying Terraform module (e.g., `compute/eks/README.md`) contains its own localized documentation breaking down its specific resources. 
 
-  is_eks_nodegroup_enabled     = true
-  is_eks_nodegroup_role_enabled = true
+However, all core modules adhere to a strict **pedagogical framework** comprising:
+1.  **The 101 Concept:** A jargon-free explanation of the architectural components.
+2.  **The DevSecOps Angle:** The explicit security and operational reasoning behind the architectural design (i.e. Least Privilege, isolating Bastion Hosts, dropping inbound SSH).
 
-  node_group_name         = "primary-node-group"
-  node_group_instance_types = ["t3.medium"]
-  node_group_desired_size = 2
-  node_group_min_size     = 1
-  node_group_max_size     = 4
-  node_group_subnets      = dependency.eks.outputs.private_subnet_ids
-}
-```
-
-## Variables
-
-| Variable                    | Description                    | Type         | Default       |
-| --------------------------- | ------------------------------ | ------------ | ------------- |
-| `project_name`              | Name of the project            | string       | required      |
-| `environment`               | Environment (dev, stage, prod) | string       | required      |
-| `cluster_name`              | EKS cluster name               | string       | required      |
-| `node_group_name`           | Name of the node group         | string       | required      |
-| `node_group_instance_types` | EC2 instance types             | list(string) | ["t3.medium"] |
-| `node_group_capacity_type`  | ON_DEMAND or SPOT              | string       | "ON_DEMAND"   |
-| `node_group_desired_size`   | Desired number of nodes        | number       | 2             |
-| `node_group_min_size`       | Minimum nodes                  | number       | 1             |
-| `node_group_max_size`       | Maximum nodes                  | number       | 4             |
-| `is_karpenter_enabled`      | Enable Karpenter               | bool         | false         |
-
-## Outputs
-
-| Output               | Description                         |
-| -------------------- | ----------------------------------- |
-| `nodegroup_role_arn` | IAM role ARN for node group         |
-| `nodegroup_id`       | EKS node group ID                   |
-| `nodegroup_status`   | Node group status                   |
-| `karpenter_role_arn` | Karpenter IAM role ARN (if enabled) |
-
-## Dependencies
-
-- EKS Cluster must be created first
-- VPC with private subnets for node group placement
-- Security groups for node communication
+Always review the module-level READMEs before executing `terragrunt apply` on an unfamiliar component.

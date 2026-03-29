@@ -75,11 +75,11 @@ resource "kubectl_manifest" "karpenter_crds_nodeclaim" {
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: nodeclaims.karpenter.k8s.aws
+  name: nodeclaims.karpenter.sh
   labels:
     app.kubernetes.io/part-of: karpenter
 spec:
-  group: karpenter.k8s.aws
+  group: karpenter.sh
   names:
     kind: NodeClaim
     listKind: NodeClaimList
@@ -126,7 +126,12 @@ resource "helm_release" "karpenter" {
   # Skip CRD installation since we install them separately
   skip_crds = true
 
+  # IRSA Configuration - Annotate service account with IAM role
   set = [
+    {
+      name  = "serviceAccount.name"
+      value = "karpenter"
+    },
     {
       name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
       value = var.karpenter_controller_role_arn

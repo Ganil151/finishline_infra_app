@@ -32,6 +32,12 @@ This Terraform module creates and manages AWS Identity and Access Management (IA
 
 ## Overview
 
+> [!NOTE] 
+> **The 101 Concept:** IAM (Identity and Access Management) is the bouncer for your AWS account. It determines EXACTLY who or what is allowed to do anything. In this module, we are heavily focused on giving our Kubernetes control plane, worker nodes, and individual applications the exact digital ID cards they need to function—nothing more.
+
+> [!TIP]
+> **The DevSecOps Angle:** This module enforces "Least Privilege." We NEVER give broad Administrator access to our instances. Furthermore, we use **OIDC (OpenID Connect)** to glue Kubernetes identities to AWS identities. This means if a pod gets compromised, the blast radius is restricted only to the permissions of that specific pod, instead of the attacker inheriting the master permissions of the entire EC2 server it lives on.
+
 The IAM module provides a comprehensive identity and access management solution for EKS workloads with the following capabilities:
 
 - **EKS Cluster IAM Role** - Permissions for EKS control plane operations
@@ -52,104 +58,73 @@ This module follows AWS security best practices including least-privilege access
 
 ### IAM Resource Relationships
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              IAM Module Architecture                             │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    EKS["EKS Cluster"]
 
-                              ┌─────────────────────┐
-                              │   EKS Cluster       │
-                              │                     │
-                              └──────────┬──────────┘
-                                         │
-                    ┌────────────────────┼────────────────────┐
-                    │                    │                    │
-                    ▼                    ▼                    ▼
-          ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-          │ EKS Cluster Role │ │  Nodegroup Role  │ │  OIDC Provider   │
-          │                  │ │                  │ │                  │
-          │ - Cluster Policy │ │ - Worker Policy  │ │ - Thumbprint     │
-          └──────────────────┘ │ - CNI Policy     │ │ - Client ID      │
-                               │ - ECR ReadOnly   │ └────────┬─────────┘
-                               └──────────────────┘          │
-                                                             │ Trust
-                                                             ▼
-          ┌──────────────────────────────────────────────────────────────────┐
-          │                         IRSA Roles                                │
-          │                                                                   │
-          │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐  │
-          │  │ Karpenter        │ │ EBS CSI Driver   │ │ Custom Workload  │  │
-          │  │ Controller Role  │ │ Role             │ │ OIDC Role        │  │
-          │  │                  │ │                  │ │                  │  │
-          │  │ - EC2 Actions    │ │ - EBS Actions    │ │ - S3 Access      │  │
-          │  │ - IAM PassRole   │ │ - Volume Mgmt    │ │ - Custom Policy  │  │
-          │  │ - SSM Params     │ │                  │ │                  │  │
-          │  └──────────────────┘ └──────────────────┘ └──────────────────┘  │
-          └──────────────────────────────────────────────────────────────────┘
-                                         │
-                                         │ Instance Profile
-                                         ▼
-          ┌──────────────────────────────────────────────────────────────────┐
-          │                      Karpenter Node Role                          │
-          │                                                                   │
-          │  - AmazonEKSWorkerNodePolicy                                      │
-          │  - AmazonEKS_CNI_Policy                                           │
-          │  - AmazonEC2ContainerRegistryReadOnly                             │
-          │  - AmazonSSMManagedInstanceCore                                   │
-          └──────────────────────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-          ┌──────────────────────────────────────────────────────────────────┐
-          │                      EC2 Instances                                │
-          │                  (Provisioned by Karpenter)                       │
-          └──────────────────────────────────────────────────────────────────┘
+    subgraph ClusterRoles ["Cluster Roles"]
+        direction TB
+        EKS_Role["EKS Cluster Role<br/>- Cluster Policy"]
+        Nodegroup_Role["Nodegroup Role<br/>- Worker Policy<br/>- CNI Policy<br/>- ECR ReadOnly"]
+    end
+
+    OIDC["OIDC Provider<br/>- Thumbprint<br/>- Client ID"]
+
+    subgraph IRSARoles ["IRSA Roles"]
+        direction TB
+        Karpenter_Role["Karpenter Controller Role<br/>- EC2 Actions<br/>- IAM PassRole<br/>- SSM Params"]
+        EBS_Role["EBS CSI Driver Role<br/>- EBS Actions<br/>- Volume Mgmt"]
+        Custom_Role["Custom Workload OIDC Role<br/>- S3 Access<br/>- Custom Policy"]
+    end
+
+    Karpenter_Node["Karpenter Node Role<br/>- EKS Worker Node<br/>- EKS CNI<br/>- ECR ReadOnly<br/>- SSM Managed Instance"]
+
+    EC2["EC2 Instances<br/>(Provisioned by Karpenter)"]
+
+    EKS --> EKS_Role
+    EKS --> Nodegroup_Role
+    EKS --> OIDC
+
+    OIDC -->|"Trust Relationship"| IRSARoles
+
+    IRSARoles --> Karpenter_Role
+    IRSARoles --> EBS_Role
+    IRSARoles --> Custom_Role
+
+    Karpenter_Node -->|"Instance Profile"| EC2
+
+    style EKS fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
+    style ClusterRoles fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style IRSARoles fill:#26466d,stroke:#1d3557,stroke-width:2px,color:#fff
+    style Karpenter_Node fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style EC2 fill:#4a4e69,stroke:#22223b,stroke-width:2px,color:#fff
+    style OIDC fill:#9d4edd,stroke:#5a189a,stroke-width:2px,color:#fff
 ```
 
 ### IRSA Trust Relationship Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                        IRSA Trust Relationship Flow                              │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant K8s as Kubernetes Service Account<br/>karpenter/karpenter-controller
+    participant Pod as Pod on Node
+    participant EKS as EKS OIDC Provider
+    participant SDK as AWS SDK
+    participant STS as AWS STS
+    participant IAM as IAM
 
-1. Kubernetes Service Account
-   namespace: karpenter
-   name: karpenter-controller
-   annotation: eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/karpenter-role
-   │
-   ▼
-2. Pod Scheduled on Node
-   serviceAccountName: karpenter-controller
-   │
-   ▼
-3. EKS Injects Web Identity Token
-   Path: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
-   │
-   ▼
-4. AWS SDK Discovers Environment Variables
-   AWS_ROLE_ARN=arn:aws:iam::ACCOUNT:role/karpenter-role
-   AWS_WEB_IDENTITY_TOKEN_FILE=/var/run/secrets/eks.amazonaws.com/serviceaccount/token
-   │
-   ▼
-5. STS AssumeRoleWithWebIdentity Request
-   Role: arn:aws:iam::ACCOUNT:role/karpenter-role
-   Token: JWT from EKS OIDC provider
-   │
-   ▼
-6. IAM Validates Trust Policy
-   Condition: sub = system:serviceaccount:karpenter:karpenter-controller
-   Condition: aud = sts.amazonaws.com
-   │
-   ▼
-7. Temporary Credentials Issued
-   AccessKeyId: ASIA...
-   SecretAccessKey: ...
-   SessionToken: ...
-   Expiration: 1 hour
-   │
-   ▼
-8. Pod Uses Credentials for AWS API Calls
-   ec2:RunInstances, ssm:GetParameter, etc.
+    K8s->>K8s: annotation:<br/>eks.amazonaws.com/role-arn
+    K8s->>Pod: Schedule with serviceAccountName
+    Pod->>EKS: Request Web Identity Token
+    EKS-->>Pod: JWT Token
+    Pod->>SDK: AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE
+    SDK->>STS: AssumeRoleWithWebIdentity<br/>Role + Token
+    STS->>IAM: Validate Trust Policy
+    IAM-->>STS: sub = system:serviceaccount:<br/>karpenter:karpenter-controller
+    STS-->>SDK: Temporary Credentials<br/>AccessKeyId, SecretAccessKey,<br/>SessionToken (1 hour)
+    SDK->>Pod: Credentials available
+    Pod->>AWS Services: API Calls<br/>(ec2:RunInstances, ssm:GetParameter)
+
+    Note over K8s,IAM: Trust Policy Condition:<br/>aud = sts.amazonaws.com
 ```
 
 ---
@@ -672,29 +647,18 @@ IRSA (IAM Roles for Service Accounts) enables Kubernetes pods to assume IAM role
 
 ### How IRSA Works
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           IRSA Flow                                      │
-└─────────────────────────────────────────────────────────────────────────┘
-
-Step 1: Create IAM Role with OIDC Trust
-└─> Trust policy allows OIDC provider
-└─> Condition: sub = system:serviceaccount:namespace:name
-└─> Condition: aud = sts.amazonaws.com
-
-Step 2: Annotate Kubernetes Service Account
-└─> kubectl annotate sa my-sa -n my-namespace eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT:role/my-role
-
-Step 3: Deploy Pod with Service Account
-└─> spec.serviceAccountName: my-sa
-
-Step 4: EKS Injects Web Identity Token
-└─> Token mounted at /var/run/secrets/eks.amazonaws.com/serviceaccount/token
-└─> Environment variables: AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE
-
-Step 5: AWS SDK Discovers Credentials
-└─> Pod calls AWS APIs using temporary credentials
-└─> Credentials automatically rotated by STS
+```mermaid
+graph TD
+    Step1[1. Create IAM Role with OIDC Trust<br/>- Trust policy allows OIDC provider<br/>- Condition: sub = SA identifier<br/>- Condition: aud = sts.amazonaws.com]
+    Step2[2. Annotate Kubernetes Service Account<br/>- eks.amazonaws.com/role-arn: ARN]
+    Step3[3. Deploy Pod with Service Account<br/>- spec.serviceAccountName: my-sa]
+    Step4[4. EKS Injects Web Identity Token<br/>- Token mounted at /var/run/secrets/...<br/>- ENV: AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE]
+    Step5[5. AWS SDK Discovers Credentials<br/>- Pod calls AWS APIs using temporary credentials<br/>- Credentials automatically rotated by STS]
+    
+    Step1 --> Step2
+    Step2 --> Step3
+    Step3 --> Step4
+    Step4 --> Step5
 ```
 
 ### Configuring IRSA

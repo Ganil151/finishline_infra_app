@@ -124,6 +124,7 @@ resource "aws_eks_node_group" "nodegroup" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [labels, taints]
   }
 
   timeouts {
@@ -145,7 +146,4 @@ resource "aws_eks_node_group" "nodegroup" {
     aws_eks_addon.kube_proxy
   ]
 
-  lifecycle {
-    ignore_changes = [labels, taints]
-  }
 }

@@ -41,24 +41,21 @@ The networking modules provide a production-ready AWS infrastructure foundation 
 
 ### Module Dependencies
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Networking Modules                            │
-│                                                                  │
-│  ┌─────────────┐                                                │
-│  │     VPC     │                                                │
-│  │  (Foundation)│                                               │
-│  └──────┬──────┘                                                │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌─────────────┐         ┌─────────────┐                        │
-│  │  Security   │────────►│     ALB     │                        │
-│  │   Group     │         │             │                        │
-│  │  (Security) │         │(Load Balancer)│                      │
-│  └─────────────┘         └─────────────┘                        │
-│                                                                  │
-│  Direction: VPC → Security Group → ALB                          │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Networking ["Networking Modules"]
+        direction TB
+        VPC["VPC<br/>(Foundation)"]
+        SG["Security Group<br/>(Security)"]
+        ALB["ALB<br/>(Load Balancer)"]
+    end
+
+    VPC --> SG
+    SG --> ALB
+
+    style VPC fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style SG fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style ALB fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
 ```
 
 ---
@@ -67,82 +64,87 @@ The networking modules provide a production-ready AWS infrastructure foundation 
 
 ### High-Level Architecture
 
-```
-                                    Internet
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Route 53 (DNS)              │
-                        │   app.finishline.com          │
-                        └───────────────────────────────┘
-                                        │
-                                        ▼
-                        ┌───────────────────────────────┐
-                        │   Application Load Balancer   │
-                        │   (ALB Module)                │
-                        │   - Public Subnets            │
-                        │   - SSL Termination           │
-                        │   - Health Checks             │
-                        └───────────────────────────────┘
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │                    VPC (VPC Module)                        │
-        │                    10.0.0.0/16                             │
-        │                                                           │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │              Public Subnets                          │  │
-        │  │  - ALB                                               │  │
-        │  │  - NAT Gateway                                       │  │
-        │  │  - Bastion/Jumphost                                  │  │
-        │  │  10.0.1.0/24 (AZ-a)  10.0.2.0/24 (AZ-b)             │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        │                           │                                │
-        │                           │ NAT Gateway                    │
-        │                           ▼                                │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │              Private Subnets                         │  │
-        │  │  - Application Servers (EC2/EKS)                     │  │
-        │  │  - Databases (RDS)                                   │  │
-        │  │  - Cache (ElastiCache)                               │  │
-        │  │  10.0.10.0/24 (AZ-a)  10.0.11.0/24 (AZ-b)           │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        │                                                           │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │           Security Groups (SG Module)                │  │
-        │  │  - ALB Security Group (ports 80, 443)               │  │
-        │  │  - Application Security Group (port 8080)           │  │
-        │  │  - Database Security Group (port 5432)              │  │
-        │  │  - Bastion Security Group (port 22)                 │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Internet["Internet"]
+    R53["Route 53 (DNS)<br/>app.finishline.com"]
+
+    subgraph ALB_Module ["Application Load Balancer (ALB Module)"]
+        direction TB
+        ALB["ALB<br/>- Public Subnets<br/>- SSL Termination<br/>- Health Checks"]
+    end
+
+    subgraph VPC_Module ["VPC (VPC Module)<br/>10.0.0.0/16"]
+        direction TB
+
+        subgraph Public ["Public Subnets"]
+            direction LR
+            P1["10.0.1.0/24<br/>(AZ-a)<br/>• ALB<br/>• NAT GW<br/>• Bastion"]
+        end
+
+        NAT["NAT Gateway"]
+
+        subgraph Private ["Private Subnets"]
+            direction LR
+            P2["10.0.10.0/24<br/>(AZ-a)<br/>• App/EC2/EKS<br/>• RDS<br/>• ElastiCache"]
+        end
+
+        subgraph SG_Module ["Security Groups (SG Module)"]
+            direction TB
+            SG1["ALB SG: 80, 443"]
+            SG2["App SG: 8080"]
+            SG3["DB SG: 5432"]
+            SG4["Bastion SG: 22"]
+        end
+    end
+
+    Internet --> R53
+    R53 --> ALB
+    ALB --> VPC_Module
+    Public --> NAT
+    NAT --> Private
+
+    style Internet fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style R53 fill:#f4a261,stroke:#e76f51,stroke-width:2px,color:#fff
+    style ALB_Module fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
+    style VPC_Module fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style Public fill:#4ecdc4,stroke:#0b7285,stroke-width:2px,color:#fff
+    style Private fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style SG_Module fill:#dda0dd,stroke:#862e9c,stroke-width:2px,color:#fff
 ```
 
 ### Resource Flow
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│    VPC       │────►│  Security    │────►│     ALB      │
-│   Module     │     │   Group      │     │    Module    │
-│              │     │   Module     │     │              │
-│ • VPC        │     │ • Ingress    │     │ • ALB        │
-│ • Subnets    │     │   Rules      │     │ • Target     │
-│ • IGW        │     │ • Egress     │     │   Group      │
-│ • NAT GW     │     │   Rules      │     │ • Listener   │
-│ • Route      │     │ • Tags       │     │ • Health     │
-│   Tables     │     │              │     │   Checks     │
-│ • NACLs      │     │              │     │              │
-└──────────────┘     └──────────────┘     └──────────────┘
-       │                    │                    │
-       └────────────────────┴────────────────────┘
-                            │
-                            ▼
-                   ┌─────────────────┐
-                   │  Compute/App    │
-                   │   Resources     │
-                   └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph VPC ["VPC Module"]
+        direction TB
+        VPC_Res["• VPC<br/>• Subnets<br/>• IGW<br/>• NAT GW<br/>• Route Tables<br/>• NACLs"]
+    end
+
+    subgraph SG ["Security Group Module"]
+        direction TB
+        SG_Res["• Ingress Rules<br/>• Egress Rules<br/>• Tags"]
+    end
+
+    subgraph ALB ["ALB Module"]
+        direction TB
+        ALB_Res["• ALB<br/>• Target Group<br/>• Listener<br/>• Health Checks"]
+    end
+
+    subgraph Compute ["Compute/App Resources"]
+    end
+
+    VPC --> SG
+    SG --> ALB
+    VPC --> Compute
+    SG --> Compute
+    ALB --> Compute
+
+    style VPC fill:#1a1a2e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style SG fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style ALB fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
+    style Compute fill:#4a4e69,stroke:#22223b,stroke-width:2px,color:#fff
 ```
 
 ---
@@ -254,37 +256,24 @@ listener_arn            # Listener ARN
 
 ## Module Relationships
 
-### Dependency Chain
+### Module Dependency Graph
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Module Dependency Graph                       │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    VPC[VPC Module]
+    ALB_SG[ALB Security Group]
+    App_SG[App Security Group]
+    DB_SG[Database Security Group]
+    ALB[ALB Module]
+    Compute[Target Instances<br/>EC2 / EKS / ECS]
 
-                    ┌─────────────┐
-                    │     VPC     │
-                    │   Module    │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-              ▼            ▼            ▼
-        ┌───────────┐ ┌───────────┐ ┌───────────┐
-        │   ALB     │ │   App     │ │ Database  │
-        │    SG     │ │    SG     │ │    SG     │
-        └─────┬─────┘ └─────┬─────┘ └─────┬─────┘
-              │             │             │
-              ▼             │             │
-        ┌───────────┐       │             │
-        │    ALB    │       │             │
-        │   Module  │       │             │
-        └─────┬─────┘       │             │
-              │             │             │
-              ▼             ▼             ▼
-        ┌──────────────────────────────────────┐
-        │        Target Instances              │
-        │   (EC2 / EKS / ECS / Lambda)         │
-        └──────────────────────────────────────┘
+    VPC --> ALB_SG
+    VPC --> App_SG
+    VPC --> DB_SG
+    ALB_SG --> ALB
+    ALB --> Compute
+    App_SG --> Compute
+    DB_SG --> Compute
 ```
 
 ### Data Flow Between Modules
@@ -381,103 +370,47 @@ module "alb" {
 ### Request Flow (Inbound)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Inbound Request Flow                              │
-└─────────────────────────────────────────────────────────────────────┘
+### Inbound Request Flow
 
-Internet
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. DNS Resolution (Route 53)                                        │
-│    app.finishline.com → alb-xyz.us-west-2.elb.amazonaws.com         │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 2. Internet Gateway (VPC Module)                                    │
-│    Routes traffic into VPC                                          │
-│    Resource: aws_internet_gateway.finishline_igw                    │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 3. Public Subnet (VPC Module)                                       │
-│    Traffic enters public subnet                                     │
-│    Resource: aws_subnet.finishline_public_subnet                    │
-│    NACL Check: aws_network_acl.finishline_public_nacl               │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 4. ALB Security Group (SG Module)                                   │
-│    Stateful firewall check (ports 80/443)                           │
-│    Resource: aws_security_group.finishline_sg                       │
-│    Ingress Rule: Allow HTTPS from 0.0.0.0/0                         │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 5. Application Load Balancer (ALB Module)                           │
-│    SSL termination, listener rules, routing                         │
-│    Resources:                                                       │
-│    - aws_alb.finishline_alb                                         │
-│    - aws_lb_listener.finishline_alb_listener                        │
-│    - aws_lb_target_group.finishline_alb_tg                          │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 6. Private Subnet (VPC Module)                                      │
-│    Traffic routed to private subnet                                 │
-│    Resource: aws_subnet.finishline_private_subnet                   │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 7. Application Security Group (SG Module)                           │
-│    Stateful firewall check (application port)                       │
-│    Resource: aws_security_group.finishline_app_sg                   │
-│    Ingress Rule: Allow from ALB security group                      │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 8. Target Instance (EC2/EKS)                                        │
-│    Application processes request                                    │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant User as Internet / Client
+    participant R53 as Route 53 (DNS)
+    participant IGW as Internet Gateway
+    participant PubSub as Public Subnet (ALB)
+    participant ALBSG as ALB Security Group
+    participant ALB as Application Load Balancer
+    participant PrivSub as Private Subnet (App)
+    participant AppSG as App Security Group
+    participant App as Target Instance (EKS/EC2)
+
+    User->>R53: 1. DNS Resolution
+    User->>IGW: 2. Request enters VPC
+    IGW->>PubSub: 3. Crosses Public Subnet Boundary
+    PubSub->>ALBSG: 4. Security Group Check (80/443)
+    ALBSG->>ALB: 5. Traffic reaches ALB
+    ALB->>PrivSub: 6. ALB routes to Private Subnet
+    PrivSub->>AppSG: 7. Security Group Check (App Port)
+    AppSG->>App: 8. Request processed by Application
 ```
 
 ### Response Flow (Outbound)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Outbound Response Flow                            │
-└─────────────────────────────────────────────────────────────────────┘
+### Outbound Response Flow
 
-Target Instance
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 1. Application Security Group (SG Module)                           │
-│    Stateful - return traffic automatically allowed                  │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 2. Private Subnet → NAT Gateway (VPC Module)                        │
-│    Outbound internet via NAT                                        │
-│    Resource: aws_nat_gateway.finishline_nat_gw                      │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ 3. Public Subnet → Internet Gateway (VPC Module)                    │
-│    Exit VPC through IGW                                             │
-└─────────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-Internet
+```mermaid
+sequenceDiagram
+    participant App as Target Instance (EKS/EC2)
+    participant AppSG as App Security Group
+    participant NAT as NAT Gateway
+    participant IGW as Internet Gateway
+    participant User as Internet / Client
+
+    App->>AppSG: 1. Outbound traffic initiated
+    AppSG->>NAT: 2. Route to NAT Gateway (Private Subnet)
+    NAT->>IGW: 3. Route to Internet Gateway (Public Subnet)
+    IGW->>User: 4. Exit VPC to Internet
 ```
 
 ---
@@ -812,83 +745,87 @@ output "target_group_arn" {
 
 ### Production Topology (3 AZ)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AWS Region: us-west-2                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  VPC: finishline-prod-vpc (10.0.0.0/16)                                     │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Internet Gateway: finishline-prod-igw                                │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                      │                                       │
-│         ┌────────────────────────────┼────────────────────────────┐          │
-│         │                            │                            │          │
-│         ▼                            ▼                            ▼          │
-│  ┌─────────────┐             ┌─────────────┐             ┌─────────────┐     │
-│  │  AZ: us-w-2a│             │  AZ: us-w-2b│             │  AZ: us-w-2c│     │
-│  │             │             │             │             │             │     │
-│  │ ┌─────────┐ │             │ ┌─────────┐ │             │ ┌─────────┐ │     │
-│  │ │ Public  │ │             │ │ Public  │ │             │ │ Public  │ │     │
-│  │ │Subnet 1 │ │             │ │Subnet 2 │ │             │ │Subnet 3 │ │     │
-│  │ │10.0.1.0/│ │             │ │10.0.2.0/│ │             │ │10.0.3.0/│ │     │
-│  │ │   24    │ │             │ │   24    │ │             │ │   24    │ │     │
-│  │ │         │ │             │ │         │ │             │ │         │ │     │
-│  │ │ • ALB   │ │             │ │ • ALB   │ │             │ │ • ALB   │ │     │
-│  │ │ • NAT GW│ │             │ │ • NAT GW│ │             │ │ • NAT GW│ │     │
-│  │ └────┬────┘ │             │ └────┬────┘ │             │ └────┬────┘ │     │
-│  │      │      │             │      │      │             │      │      │     │
-│  │ ┌────┴────┐ │             │ ┌────┴────┐ │             │ ┌────┴────┐ │     │
-│  │ │ Private │ │             │ │ Private │ │             │ │ Private │ │     │
-│  │ │Subnet 1 │ │             │ │Subnet 2 │ │             │ │Subnet 3 │ │     │
-│  │ │10.0.10.0│ │             │ │10.0.11.0│ │             │ │10.0.12.0│ │     │
-│  │ │   /24   │ │             │ │   /24   │ │             │ │   /24   │ │     │
-│  │ │         │ │             │ │         │ │             │ │         │ │     │
-│  │ │ • App   │ │             │ │ • App   │ │             │ │ • App   │ │     │
-│  │ │ • EKS   │ │             │ │ • EKS   │ │             │ │ • EKS   │ │     │
-│  │ └─────────┘ │             │ └─────────┘ │             │ └─────────┘ │     │
-│  │             │             │             │             │             │     │
-│  └─────────────┘             └─────────────┘             └─────────────┘     │
-│                                                                             │
-│  Route Tables:                                                              │
-│  • Public RT: 0.0.0.0/0 → IGW                                               │
-│  • Private RT: 0.0.0.0/0 → NAT GW                                           │
-│                                                                             │
-│  Security Groups:                                                           │
-│  • alb-sg: Allow 80, 443 from internet                                      │
-│  • app-sg: Allow 8080 from alb-sg                                           │
-│  • db-sg: Allow 5432 from app-sg                                            │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph AWS ["AWS Region: us-west-2"]
+        direction TB
+
+        subgraph VPC ["VPC: finishline-prod-vpc (10.0.0.0/16)"]
+            direction TB
+
+            IGW["Internet Gateway<br/>finishline-prod-igw"]
+
+            subgraph AZ_a ["AZ: us-west-2a"]
+                direction TB
+                Public1["Public Subnet 1<br/>10.0.1.0/24<br/>• ALB<br/>• NAT GW"]
+                Private1["Private Subnet 1<br/>10.0.10.0/24<br/>• App<br/>• EKS"]
+            end
+
+            subgraph AZ_b ["AZ: us-west-2b"]
+                direction TB
+                Public2["Public Subnet 2<br/>10.0.2.0/24<br/>• ALB<br/>• NAT GW"]
+                Private2["Private Subnet 2<br/>10.0.11.0/24<br/>• App<br/>• EKS"]
+            end
+
+            subgraph AZ_c ["AZ: us-west-2c"]
+                direction TB
+                Public3["Public Subnet 3<br/>10.0.3.0/24<br/>• ALB<br/>• NAT GW"]
+                Private3["Private Subnet 3<br/>10.0.12.0/24<br/>• App<br/>• EKS"]
+            end
+
+            RT["Route Tables:<br/>• Public: 0.0.0.0/0 → IGW<br/>• Private: 0.0.0.0/0 → NAT"]
+            SG["Security Groups:<br/>• alb-sg: 80, 443<br/>• app-sg: 8080<br/>• db-sg: 5432"]
+        end
+    end
+
+    IGW --> AZ_a
+    IGW --> AZ_b
+    IGW --> AZ_c
+    Public1 --> Private1
+    Public2 --> Private2
+    Public3 --> Private3
+
+    style AWS fill:#1a1a2e,stroke:#0f3460,stroke-width:3px,color:#fff
+    style VPC fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style IGW fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px,color:#fff
+    style AZ_a fill:#4ecdc4,stroke:#0b7285,stroke-width:2px,color:#fff
+    style AZ_b fill:#4ecdc4,stroke:#0b7285,stroke-width:2px,color:#fff
+    style AZ_c fill:#4ecdc4,stroke:#0b7285,stroke-width:2px,color:#fff
+    style Public1 fill:#a8e6cf,stroke:#2d6a4f,stroke-width:2px,color:#333
+    style Public2 fill:#a8e6cf,stroke:#2d6a4f,stroke-width:2px,color:#333
+    style Public3 fill:#a8e6cf,stroke:#2d6a4f,stroke-width:2px,color:#333
+    style Private1 fill:#dcedc1,stroke:#5c7c34,stroke-width:2px,color:#333
+    style Private2 fill:#dcedc1,stroke:#5c7c34,stroke-width:2px,color:#333
+    style Private3 fill:#dcedc1,stroke:#5c7c34,stroke-width:2px,color:#333
+    style RT fill:#ffd43b,stroke:#f08c00,stroke-width:2px,color:#333
+    style SG fill:#dda0dd,stroke:#862e9c,stroke-width:2px,color:#fff
 ```
 
 ### Traffic Distribution
 
-```
-                    Client Requests
-                         │
-                         ▼
-              ┌──────────────────┐
-              │  Route 53 DNS    │
-              │  (Round Robin)   │
-              └──────────────────┘
-                         │
-                         ▼
-              ┌──────────────────┐
-              │  Application LB  │
-              │  (Cross-AZ)      │
-              └──────────────────┘
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-         ▼               ▼               ▼
-   ┌──────────┐   ┌──────────┐   ┌──────────┐
-   │ AZ-a     │   │ AZ-b     │   │ AZ-c     │
-   │ 33%      │   │ 33%      │   │ 33%      │
-   │ Targets  │   │ Targets  │   │ Targets  │
-   └──────────┘   └──────────┘   └──────────┘
+```mermaid
+flowchart TB
+    Client["Client Requests"]
+    R53["Route 53 DNS<br/>(Round Robin)"]
+    ALB["Application LB<br/>(Cross-AZ)"]
+
+    subgraph AZ_Targets ["Target Groups by AZ"]
+        direction LR
+        AZa["AZ-a<br/>33%<br/>Targets"]
+        AZb["AZ-b<br/>33%<br/>Targets"]
+        AZc["AZ-c<br/>33%<br/>Targets"]
+    end
+
+    Client --> R53
+    R53 --> ALB
+    ALB --> AZa
+    ALB --> AZb
+    ALB --> AZc
+
+    style Client fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style R53 fill:#f4a261,stroke:#e76f51,stroke-width:2px,color:#fff
+    style ALB fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
+    style AZ_Targets fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
 ```
 
 ---
@@ -897,35 +834,38 @@ output "target_group_arn" {
 
 ### Defense in Depth
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Security Layers                                       │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Layer1 ["Layer 1: AWS Edge Security"]
+        L1["• DDoS Protection (Shield)<br/>• SSL/TLS Termination (ALB)<br/>• WAF Integration"]
+    end
 
-Layer 1: AWS Edge Security
-├── DDoS Protection (AWS Shield Standard)
-├── SSL/TLS Termination (ALB)
-└── WAF Integration (Optional)
+    subgraph Layer2 ["Layer 2: VPC Boundary"]
+        L2["• Network Isolation<br/>• VPC Flow Logs<br/>• NACL Rules"]
+    end
 
-Layer 2: VPC Boundary
-├── Network Isolation
-├── VPC Flow Logs
-└── NACL Rules (Stateless)
+    subgraph Layer3 ["Layer 3: Subnet Level"]
+        L3["• Public/Private Separation<br/>• Route Table Controls<br/>• NAT Gateway"]
+    end
 
-Layer 3: Subnet Level
-├── Public/Private Separation
-├── Route Table Controls
-└── NAT Gateway (Outbound Only)
+    subgraph Layer4 ["Layer 4: Instance Level"]
+        L4["• Security Groups (Stateful)<br/>• IAM Roles<br/>• OS Firewall"]
+    end
 
-Layer 4: Instance Level
-├── Security Groups (Stateful)
-├── IAM Roles
-└── OS Firewall (iptables)
+    subgraph Layer5 ["Layer 5: Application Level"]
+        L5["• AuthN/AuthZ<br/>• Input Validation<br/>• Encryption at Rest"]
+    end
 
-Layer 5: Application Level
-├── Authentication/Authorization
-├── Input Validation
-└── Encryption at Rest
+    Layer1 --> Layer2
+    Layer2 --> Layer3
+    Layer3 --> Layer4
+    Layer4 --> Layer5
+
+    style Layer1 fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
+    style Layer2 fill:#f4a261,stroke:#e76f51,stroke-width:2px,color:#fff
+    style Layer3 fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style Layer4 fill:#26466d,stroke:#1d3557,stroke-width:2px,color:#fff
+    style Layer5 fill:#4a4e69,stroke:#22223b,stroke-width:2px,color:#fff
 ```
 
 ### Security Group Rules Matrix
@@ -946,44 +886,43 @@ Layer 5: Application Level
 
 ### Multi-AZ Deployment
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    High Availability Architecture                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    R53["Route 53<br/>Health Checks"]
+    ALB["ALB (Multi-AZ)<br/>AZ-a + AZ-b + AZ-c"]
 
-                        ┌─────────────────┐
-                        │   Route 53      │
-                        │   Health Checks │
-                        └────────┬────────┘
-                                 │
-                        ┌────────▼────────┐
-                        │  ALB (Multi-AZ) │
-                        │  AZ-a + AZ-b    │
-                        └────────┬────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              │                  │                  │
-     ┌────────▼────────┐ ┌───────▼────────┐ ┌──────▼───────┐
-     │   AZ: us-w-2a   │ │ AZ: us-w-2b    │ │ AZ: us-w-2c  │
-     │                 │ │                │ │              │
-     │ ┌─────────────┐ │ │ ┌────────────┐ │ │ ┌──────────┐ │
-     │ │ Target 1    │ │ │ │ Target 2   │ │ │ │ Target 3 │ │
-     │ │ Healthy     │ │ │ │ Healthy    │ │ │ │ Healthy  │ │
-     │ └─────────────┘ │ │ └────────────┘ │ │ └──────────┘ │
-     │                 │ │                │ │              │
-     │ ┌─────────────┐ │ │ ┌────────────┐ │ │ ┌──────────┐ │
-     │ │ Target 4    │ │ │ │ Target 5   │ │ │ │ Target 6 │ │
-     │ │ Healthy     │ │ │ │ Healthy    │ │ │ │ Healthy  │ │
-     │ └─────────────┘ │ │ └────────────┘ │ │ └──────────┘ │
-     └─────────────────┘ └────────────────┘ └──────────────┘
+    subgraph AZ_a ["AZ: us-west-2a"]
+        T1["Target 1<br/>Healthy"]
+        T4["Target 4<br/>Healthy"]
+    end
 
-Failure Scenario: AZ-b goes down
-                        │
-                        ▼
-     ┌─────────────────────────────────────────┐
-     │  ALB automatically routes to AZ-a, AZ-c │
-     │  No manual intervention required        │
-     └─────────────────────────────────────────┘
+    subgraph AZ_b ["AZ: us-west-2b"]
+        T2["Target 2<br/>Healthy"]
+        T5["Target 5<br/>Healthy"]
+    end
+
+    subgraph AZ_c ["AZ: us-west-2c"]
+        T3["Target 3<br/>Healthy"]
+        T6["Target 6<br/>Healthy"]
+    end
+
+    subgraph Failure ["Failure Scenario: AZ-b goes down"]
+        direction LR
+        AutoReroute["ALB automatically routes<br/>to AZ-a, AZ-c<br/>No manual intervention"]
+    end
+
+    R53 --> ALB
+    ALB --> AZ_a
+    ALB --> AZ_b
+    ALB --> AZ_c
+    AZ_b -.-> Failure
+
+    style R53 fill:#f4a261,stroke:#e76f51,stroke-width:2px,color:#fff
+    style ALB fill:#ff9900,stroke:#e68a00,stroke-width:2px,color:#fff
+    style AZ_a fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style AZ_b fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style AZ_c fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff
+    style Failure fill:#e76f51,stroke:#d62828,stroke-width:2px,color:#fff
 ```
 
 ### Failure Handling
