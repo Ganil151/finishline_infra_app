@@ -18,7 +18,7 @@ resource "aws_instance" "finishline_jumphost" {
     kms_key_id            = var.root_volume_kms_key_id
     delete_on_termination = var.root_volume_delete_on_termination
 
-    tags = merge(local.tags, {
+    tags = merge(var.common_tags, {
       Name = "${var.project_name}-${var.environment}-jumphost"
     })
   }
@@ -50,7 +50,7 @@ resource "aws_instance" "finishline_jumphost" {
   user_data_replace_on_change = var.user_data_replace_on_change
   user_data                   = var.user_data_script_path != "" ? file(var.user_data_script_path) : null
 
-  tags = merge(local.tags, {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-jumphost"
   })
 

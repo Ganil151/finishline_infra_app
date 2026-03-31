@@ -26,11 +26,8 @@ resource "aws_security_group" "finishline_sg" {
     }
   }
 
-  tags = merge({
-    Name        = "${var.project_name}-${var.environment}-sg"
-    Project     = var.project_name
-    Environment = var.environment
-    Managed_By  = var.managed_by
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-sg"
     }, var.enable_karpenter_discovery && var.karpenter_cluster_name != "" ? {
     "karpenter.sh/discovery" = var.karpenter_cluster_name
   } : {})

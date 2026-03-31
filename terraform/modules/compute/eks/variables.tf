@@ -21,8 +21,8 @@ variable "aws_region" {
   type        = string
 }
 
-variable "computed_tags" {
-  description = "Map of tags to apply to all resources"
+variable "common_tags" {
+  description = "Centralized common tags from root.hcl"
   type        = map(string)
 }
 
@@ -115,6 +115,11 @@ variable "upgrade_policy_support_type" {
 variable "ebs_csi_driver_role_arn" {
   description = "IAM role ARN for EBS CSI driver addon (for IRSA). Leave empty to skip IRSA configuration."
   type        = string
+}
+
+variable "is_ebs_csi_driver_enabled" {
+  description = "Whether to enable the EBS CSI driver addon"
+  type        = bool
 }
 
 #============================================================

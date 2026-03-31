@@ -267,37 +267,66 @@ run_terragrunt() {
     local dir="$1"
     local module="$2"
     local step="$3"
-    
+    local max_retries=2
+    local retry_count=0
+
     echo ""
     log_info "Step $step: Running $module..."
     echo ">>> Module path: $dir"
-    
+
     # Check if directory exists
     if [[ ! -d "$dir" ]]; then
         log_error "Module directory not found: $dir"
         FAILED_MODULES+=("$module")
         return 1
     fi
-    
+
     # Check if terragrunt.hcl exists
     if [[ ! -f "$dir/terragrunt.hcl" ]]; then
         log_error "terragrunt.hcl not found in: $dir"
         FAILED_MODULES+=("$module")
         return 1
     fi
-    
+
     cd "$dir"
-    
-    # Run terragrunt with error capture
-    if terragrunt "$ACTION" --terragrunt-non-interactive; then
-        log_info "✓ $module completed successfully"
-        return 0
-    else
-        local exit_code=$?
-        log_error "✗ $module failed with exit code: $exit_code"
-        FAILED_MODULES+=("$module")
-        return 1
-    fi
+
+    # Retry logic for transient errors
+    while [[ $retry_count -le $max_retries ]]; do
+        if [[ $retry_count -gt 0 ]]; then
+            log_warn "Retry attempt $retry_count of $max_retries for $module..."
+        fi
+
+        # Run terragrunt with error capture
+        local output
+        if output=$(terragrunt "$ACTION" --terragrunt-non-interactive 2>&1); then
+            log_info "✓ $module completed successfully"
+            return 0
+        else
+            local exit_code=$?
+            log_error "✗ $module failed with exit code: $exit_code"
+            
+            # Show last 20 lines of error output for debugging
+            log_error "Error output (last 20 lines):"
+            echo "$output" | tail -20 | sed 's/^/    /'
+            
+            # Check for specific known errors that might benefit from retry
+            if echo "$output" | grep -q "RequestLimitExceeded\|Throttling\|TooManyRequests\|timeout"; then
+                log_warn "AWS throttling or timeout detected, will retry..."
+                retry_count=$((retry_count+1))
+                sleep 5
+                continue
+            fi
+            
+            # For other errors, don't retry
+            FAILED_MODULES+=("$module")
+            return 1
+        fi
+    done
+
+    # All retries exhausted
+    log_error "✗ $module failed after $max_retries retries"
+    FAILED_MODULES+=("$module")
+    return 1
 }
 
 # Helper function to check if a module directory exists

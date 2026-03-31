@@ -2,14 +2,12 @@
 #              ***  Key Pair Resources  ***
 #============================================================
 locals {
-  tags = length(var.computed_tags) > 0 ? var.computed_tags : {
-    Name        = var.key_name
-    Project     = var.project_name
-    Environment = var.environment
-    ManageBy    = var.managed_by
-    Module      = "key_pair"
-  }
+  tags = merge(var.common_tags, {
+    Name   = var.key_name
+    Module = "key_pair"
+  })
 }
+
 resource "tls_private_key" "rsa_4096" {
   algorithm = var.key_algorithm
   rsa_bits  = var.rsa_bits
@@ -30,7 +28,8 @@ resource "local_file" "private_key" {
   file_permission = "0600"
 
   provisioner "local-exec" {
-    command = "chmod 400 ${self.filename}"
+    command     = "powershell -Command \"if (Get-Command 'icacls' -ErrorAction SilentlyContinue) { icacls '${self.filename}' /inheritance:r /grant:r '$($env:USERNAME):(R)' } else { Write-Host 'Skipping permission change - icacls not available' }\""
+    interpreter = ["cmd", "/C"]
   }
 
   depends_on = [tls_private_key.rsa_4096]

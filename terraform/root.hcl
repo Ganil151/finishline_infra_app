@@ -5,42 +5,125 @@
 locals {
   account_id = get_aws_account_id()
   region     = "us-east-1"
-  
+
   common_tags = {
-    Project   = "finishline-infra-app"
-    ManagedBy = "finishline-infra-team"
+    Project     = "finishline-infra-app"
+    ManagedBy   = "finishline-infra-team"
     Environment = "${get_env("TG_ENV", "dev")}"
-    Reporter  = "Ganil Batist Yan"
+    Reporter    = "Ganil Batist Yan"
+  }
+
+  #============================================================
+  #  Conditional Provider Selection
+  #============================================================
+
+  # Generate k8s providers only for modules that connect to EXISTING clusters
+  # Monolithic composition modules (dev, stage, prod) create their own EKS clusters
+  # and define their own providers internally
+  is_k8s_module = length(regexall("compute/karpenter|compute/eks$", path_relative_to_include())) > 0
+
+  k8s_provider_content = <<EOF
+#============================================================
+#          ***  Kubernetes Provider Configuration  ***
+#============================================================
+provider "kubernetes" {
+  host                   = var.cluster_endpoint
+  cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      var.cluster_name,
+      "--region",
+      var.aws_region
+    ]
   }
 }
+
+#============================================================
+#          ***  Helm Provider Configuration  ***
+#============================================================
+provider "helm" {
+  kubernetes = {
+    host                   = var.cluster_endpoint
+    cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
+
+    exec = {
+      api_version = "client.authentication.k8s.io/v1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        var.cluster_name,
+        "--region",
+        var.aws_region
+      ]
+    }
+  }
+}
+
+#============================================================
+#          ***  Time Provider Configuration  ***
+#============================================================
+provider "time" {}
+
+#============================================================
+#          ***  Kubectl Provider Configuration  ***
+#============================================================
+provider "kubectl" {
+  host                   = var.cluster_endpoint
+  cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      var.cluster_name,
+      "--region",
+      var.aws_region
+    ]
+  }
+  load_config_file = false
+}
+EOF
+}
+
 remote_state {
   backend = "s3"
   config = {
-    bucket = "finishline-infra-app-ba3347ce"
-    key    = "${path_relative_to_include()}/terraform.tfstate"
-    region = "us-east-1"
-    encrypt = true
+    bucket       = "finishline-infra-app-e534d5ea"
+    key          = "${path_relative_to_include()}/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
     use_lockfile = true
   }
   generate = {
-    path = "backend.tf"
+    path      = "backend.tf"
     if_exists = "overwrite"
   }
 }
 
 generate "provider" {
-  path = "provider.tf"
+  path      = "provider.tf"
   if_exists = "overwrite"
-  contents = <<EOF
+  contents  = <<EOF
 provider "aws" {
   region = "us-east-1"
 
   default_tags {
     tags = {
-      Project = "finishline-infra-app"
+      Project     = "finishline-infra-app"
       Environment = "${get_env("TG_ENV", "dev")}"
-      ManagedBy = "finishline-infra-team"
-      Terraform = "true"
+      ManagedBy   = "finishline-infra-team"
+      Terraform   = "true"
     }
   }
 }
@@ -51,22 +134,18 @@ provider "random" {}
 EOF
 }
 
-# Generate Kubernetes provider for modules that need it (eks, karpenter)
-# Note: Kubernetes provider is configured in module-specific provider.tf files
-# This file is intentionally empty to avoid conflicts
+# Generate Kubernetes/Helm/Kubectl providers conditionally
+# This logic is only active for modules that manage cluster-level resources
 generate "kubernetes-provider" {
-  path = "kubernetes-provider.tf"
+  path      = "kubernetes-provider.tf"
   if_exists = "overwrite"
-  contents = <<EOF
-# Kubernetes provider is configured in module-specific provider.tf files
-# This file is intentionally empty to avoid conflicts
-EOF
+  contents  = local.is_k8s_module ? local.k8s_provider_content : "# No Kubernetes provider needed for this module (detected by root.hcl)"
 }
 
 generate "versions" {
-  path = "versions.tf"
+  path      = "versions.tf"
   if_exists = "overwrite"
-  contents = <<EOF
+  contents  = <<EOF
 terraform {
   required_version = ">= 1.0.0"
 

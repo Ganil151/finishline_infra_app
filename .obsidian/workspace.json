@@ -13,12 +13,22 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "terraform/modules/security/README.md",
+                "file": "docs/RUNBOOK.md",
                 "mode": "source",
-                "source": false
+                "source": false,
+                "backlinks": true,
+                "backlinkOpts": {
+                  "collapseAll": false,
+                  "extraContext": false,
+                  "sortOrder": "alphabetical",
+                  "showSearch": false,
+                  "searchQuery": "",
+                  "backlinkCollapsed": false,
+                  "unlinkedCollapsed": true
+                }
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "RUNBOOK"
             }
           }
         ]
@@ -78,8 +88,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "37d654f650e29211",
@@ -95,7 +104,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "terraform/modules/security/README.md",
+                "file": "terraform/README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -114,7 +123,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "terraform/modules/security/README.md",
+                "file": "terraform/README.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -157,7 +166,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "terraform/modules/security/README.md",
+                "file": "terraform/README.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -175,6 +184,15 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "markdown-importer:Open format converter": false,
+      "zk-prefixer:Create new unique note": false,
+      "random-note:Open random note": false,
+      "workspaces:Manage workspace layouts": false,
+      "publish:Publish changes...": false,
+      "obsidian-shellcommands:Shell commands: Custom variables": false,
+      "mermaid-tools:Open Mermaid Toolbar": false,
+      "table-editor-obsidian:Advanced Tables Toolbar": false,
+      "obsidian-git:Open Git source control": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
       "canvas:Create new canvas": false,
@@ -186,17 +204,27 @@
   },
   "active": "e1d0659ce3c622ed",
   "lastOpenFiles": [
-    "terraform/modules/networking/README.md",
+    "terraform/environments/prod/terragrunt.hcl",
+    "terraform/environments/stage/terragrunt.hcl",
+    "tree.txt",
+    "docs/Finishline_Karpenter_Project.pdf",
+    "terraform/environments/dev/finishline-dev-key.pem",
+    "terraform/modules/composition/dev/providers.tf",
+    "terraform/environments/dev/current-state.json",
+    "terraform/environments/dev/current-state.json.6ce2e9b2",
+    "terraform/environments/dev/_legacy/security/iam/terragrunt.hcl",
+    "terraform/environments/dev/_legacy/security/key_pair/terragrunt.hcl",
+    "terraform/environments/dev/_legacy/security/iam",
     "docs/README.md",
     "docs/RUNBOOK.md",
-    "terraform/scripts/fix-karpenter-controller-role.sh",
-    "terraform/scripts/fix-karpenter.sh",
-    "terraform/scripts/pre-launch-check.sh",
+    "terraform/README.md",
+    "docs/TROUBLESHOOTING.md",
+    "terraform/scripts/TROUBLESHOOTING.md",
+    "terraform/modules/security/README.md",
+    "terraform/modules/networking/README.md",
     "docs/KARPENTER_MANIFESTS.md",
     "docs/KARPENTER_FIXES.md",
-    "trust-policy.json",
     "docs/AUDIT_LOG.md",
-    "terraform/scripts/verify-karpenter.sh",
     "terraform/modules/networking/sg/README.md",
     "terraform/modules/networking/vpc/README.md"
   ]

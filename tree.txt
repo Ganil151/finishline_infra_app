@@ -1,0 +1,145 @@
+.
+├── docs
+│   ├── AUDIT_LOG.md
+│   ├── diagrams
+│   ├── Finishline_Infra_Project_Assignment.pdf
+│   ├── Finishline_Karpenter_Project.pdf
+│   ├── KARPENTER_FIXES.md
+│   ├── KARPENTER_MANIFESTS.md
+│   ├── README.md
+│   ├── RUNBOOK.md
+│   ├── scripts
+│   │   ├── run-all.ps1
+│   │   ├── terraform_setup.sh
+│   │   └── terrainfra.sh
+│   └── TROUBLESHOOTING.md
+├── terraform
+│   ├── environments
+│   │   ├── dev
+│   │   │   ├── current-state.json
+│   │   │   ├── finishline-dev-key.pem
+│   │   │   └── terragrunt.hcl
+│   │   ├── prod
+│   │   │   ├── compute
+│   │   │   │   ├── eks
+│   │   │   │   │   └── terragrunt.hcl
+│   │   │   │   ├── jumphost
+│   │   │   │   │   └── terragrunt.hcl
+│   │   │   │   ├── karpenter
+│   │   │   │   │   └── terragrunt.hcl
+│   │   │   │   └── terragrunt.hcl
+│   │   │   ├── networking
+│   │   │   │   ├── alb
+│   │   │   │   │   └── terragrunt.hcl
+│   │   │   │   ├── sg
+│   │   │   │   │   └── terragrunt.hcl
+│   │   │   │   ├── terragrunt.hcl
+│   │   │   │   └── vpc
+│   │   │   │       └── terragrunt.hcl
+│   │   │   └── security
+│   │   │       ├── iam
+│   │   │       │   └── terragrunt.hcl
+│   │   │       ├── key_pair
+│   │   │       │   └── terragrunt.hcl
+│   │   │       ├── kms
+│   │   │       │   └── terragrunt.hcl
+│   │   │       └── terragrunt.hcl
+│   │   └── stage
+│   │       ├── compute
+│   │       │   ├── eks
+│   │       │   │   └── terragrunt.hcl
+│   │       │   ├── jumphost
+│   │       │   │   └── terragrunt.hcl
+│   │       │   ├── karpenter
+│   │       │   │   └── terragrunt.hcl
+│   │       │   └── terragrunt.hcl
+│   │       ├── networking
+│   │       │   ├── alb
+│   │       │   │   └── terragrunt.hcl
+│   │       │   ├── sg
+│   │       │   │   └── terragrunt.hcl
+│   │       │   ├── terragrunt.hcl
+│   │       │   └── vpc
+│   │       │       └── terragrunt.hcl
+│   │       └── security
+│   │           ├── iam
+│   │           │   └── terragrunt.hcl
+│   │           ├── key_pair
+│   │           │   └── terragrunt.hcl
+│   │           ├── kms
+│   │           │   └── terragrunt.hcl
+│   │           └── terragrunt.hcl
+│   ├── modules
+│   │   ├── composition
+│   │   │   └── dev
+│   │   │       ├── main.tf
+│   │   │       ├── outputs.tf
+│   │   │       ├── providers.tf
+│   │   │       └── variables.tf
+│   │   ├── compute
+│   │   │   ├── eks
+│   │   │   │   ├── addons.tf
+│   │   │   │   ├── data.tf
+│   │   │   │   ├── locals.tf
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── outputs.tf
+│   │   │   │   ├── README.md
+│   │   │   │   └── variables.tf
+│   │   │   ├── jumphost
+│   │   │   │   ├── data.tf
+│   │   │   │   ├── locals.tf
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── outputs.tf
+│   │   │   │   ├── README.md
+│   │   │   │   └── variables.tf
+│   │   │   ├── karpenter
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── outputs.tf
+│   │   │   │   ├── README.md
+│   │   │   │   └── variables.tf
+│   │   │   └── README.md
+│   │   ├── networking
+│   │   │   ├── alb
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── outputs.tf
+│   │   │   │   ├── README.md
+│   │   │   │   └── variables.tf
+│   │   │   ├── README.md
+│   │   │   ├── sg
+│   │   │   │   ├── main.tf
+│   │   │   │   ├── outputs.tf
+│   │   │   │   ├── README.md
+│   │   │   │   └── variables.tf
+│   │   │   └── vpc
+│   │   │       ├── main.tf
+│   │   │       ├── outputs.tf
+│   │   │       ├── README.md
+│   │   │       └── variables.tf
+│   │   └── security
+│   │       ├── iam
+│   │       │   ├── data.tf
+│   │       │   ├── main.tf
+│   │       │   ├── outputs.tf
+│   │       │   ├── README.md
+│   │       │   └── variables.tf
+│   │       ├── key_pair
+│   │       │   ├── main.tf
+│   │       │   ├── outputs.tf
+│   │       │   ├── README.md
+│   │       │   └── variables.tf
+│   │       └── README.md
+│   ├── README.md
+│   ├── root.hcl
+│   └── scripts
+│       ├── cleanup_karpenter_crds.ps1
+│       ├── destroy-all.sh
+│       ├── fix-karpenter-controller-role.sh
+│       ├── fix-karpenter.sh
+│       ├── jumphost-install-tools.sh
+│       ├── pre-launch-check.sh
+│       ├── run-all.sh
+│       ├── verify-addons.sh
+│       └── verify-karpenter.sh
+└── tree.txt
+
+48 directories, 95 files

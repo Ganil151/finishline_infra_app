@@ -24,9 +24,9 @@ resource "aws_iam_role" "eks_cluster_role" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-eks-cluster-role"
-  }
+  })
 }
 #============================================================
 #           *** IAM ROLE POLICIES ATTACHMENT ***
@@ -57,9 +57,9 @@ resource "aws_iam_role" "eks_nodegroup_role" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-eks-nodegroup-role"
-  }
+  })
 }
 #============================================================
 #  *** IAM NODEGROUP ROLE POLICIES ATTACHMENT ***
@@ -78,22 +78,21 @@ resource "aws_iam_role_policy_attachment" "eks_nodegroup_role_policy" {
 #     ***  OIDC (OpenID Connect) IAM Provider  ***
 #============================================================
 resource "aws_iam_openid_connect_provider" "eks_oidc_provider" {
-  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled ? 1 : 0
 
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [var.oidc_thumbprint]
   url             = var.eks_oidc_url
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-eks-oidc-provider"
-  }
-
+  })
 }
 #============================================================
 #                   *** OIDC IAM ROLE ***
 #============================================================
 resource "aws_iam_role" "eks_oidc_role" {
-  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled ? 1 : 0
 
   name = "${var.cluster_name}-eks-oidc-role${var.name_suffix}"
 
@@ -115,16 +114,15 @@ resource "aws_iam_role" "eks_oidc_role" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-eks-oidc-role"
-  }
-
+  })
 }
 #============================================================
 #                 *** S3 OIDC Policy ***
 #============================================================
 resource "aws_iam_policy" "s3_oidc_policy" {
-  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled ? 1 : 0
 
   name = "${var.cluster_name}-s3-oidc-policy${var.name_suffix}"
 
@@ -140,18 +138,18 @@ resource "aws_iam_policy" "s3_oidc_policy" {
           var.s3_access_type == "delete" ? ["s3:DeleteObject"] :
           ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         )
-        Resource = var.s3_prefix != "" ? "${var.s3_prefix}/*" : "${var.s3_bucket_arn}/*"
+        Resource = var.s3_prefix == "*" ? "*" : (var.s3_prefix != "" ? "${var.s3_prefix}/*" : "${var.s3_bucket_arn}/*")
       }
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-s3-oidc-policy"
-  }
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "s3_oidc_policy_attachment" {
-  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" && var.s3_bucket_arn != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled && var.s3_bucket_arn != "" ? 1 : 0
 
   role       = aws_iam_role.eks_oidc_role[0].name
   policy_arn = aws_iam_policy.s3_oidc_policy[0].arn
@@ -163,21 +161,21 @@ resource "aws_iam_role_policy_attachment" "s3_oidc_policy_attachment" {
 #  KARPENTER CONTROLLER ROLE (IRSA)
 #============================================================
 resource "aws_iam_role" "karpenter-controller-role" {
-  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   name               = "${var.karpenter_cluster_name}-karpenter-controller-role${var.name_suffix}"
   assume_role_policy = data.aws_iam_policy_document.karpenter_controller_assume_role_policy[0].json
 
-  tags = {
+  tags = merge(var.common_tags, {
     "karpenter.sh/discovery" = "${var.project_name}-${var.environment}-${var.karpenter_cluster_name}"
-  }
+  })
 }
 
 #============================================================
 #  KARPENTER CONTROLLER POLICY
 #============================================================
 resource "aws_iam_policy" "karpenter-controller-policy" {
-  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   name        = "${var.karpenter_cluster_name}-karpenter-controller-policy${var.name_suffix}"
   description = "IAM policy for Karpenter controller to provision EC2 instances"
@@ -288,13 +286,13 @@ resource "aws_iam_policy" "karpenter-controller-policy" {
     ]
   })
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.karpenter_cluster_name}-karpenter-controller-policy${var.name_suffix}"
-  }
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "karpenter-controller-policy-attachment" {
-  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   policy_arn = aws_iam_policy.karpenter-controller-policy[0].arn
   role       = aws_iam_role.karpenter-controller-role[0].name
@@ -309,9 +307,9 @@ resource "aws_iam_role" "karpenter-node-role" {
   name               = "${var.karpenter_cluster_name}-karpenter-node-role${var.name_suffix}"
   assume_role_policy = data.aws_iam_policy_document.karpenter_node_assume_role_policy[0].json
 
-  tags = {
+  tags = merge(var.common_tags, {
     "karpenter.sh/discovery" = "${var.project_name}-${var.environment}-${var.karpenter_cluster_name}"
-  }
+  })
 }
 
 #============================================================
@@ -338,16 +336,16 @@ resource "aws_iam_instance_profile" "karpenter-node-profile" {
   name = "${var.karpenter_cluster_name}-karpenter-node-profile${var.name_suffix}"
   role = aws_iam_role.karpenter-node-role[0].name
 
-  tags = {
+  tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-${var.karpenter_cluster_name}-karpenter-node-profile${var.name_suffix}"
-  }
+  })
 }
 
 #============================================================
 #  EBS CSI DRIVER IAM ROLE (for IRSA)
 #============================================================
 data "aws_iam_policy_document" "ebs_csi_driver_assume_role_policy" {
-  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   statement {
     effect  = "Allow"
@@ -373,19 +371,86 @@ data "aws_iam_policy_document" "ebs_csi_driver_assume_role_policy" {
 }
 
 resource "aws_iam_role" "ebs-csi-driver-role" {
-  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   name               = "${var.cluster_name}-ebs-csi-driver-role${var.name_suffix}"
   assume_role_policy = try(data.aws_iam_policy_document.ebs_csi_driver_assume_role_policy[0].json, null)
 
-  tags = merge(var.computed_tags, {
+  tags = merge(var.common_tags, {
     Name = "${var.cluster_name}-ebs-csi-driver-role"
   })
 }
 
 resource "aws_iam_role_policy_attachment" "ebs-csi-driver-policy-attachment" {
-  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_ebs_csi_driver_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   role       = aws_iam_role.ebs-csi-driver-role[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+#============================================================
+#  JUMPHOST IAM ROLE
+#============================================================
+resource "aws_iam_role" "jumphost_role" {
+  name = "${var.project_name}-${var.environment}-jumphost-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-jumphost-role"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jumphost_ssm" {
+  role       = aws_iam_role.jumphost_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+#============================================================
+#  JUMPHOST EKS ACCESS POLICY
+#============================================================
+resource "aws_iam_role_policy" "jumphost_eks_policy" {
+  name = "${var.project_name}-${var.environment}-jumphost-eks-policy"
+  role = aws_iam_role.jumphost_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:AccessKubernetesApi"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sts:AssumeRole"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-eks-cluster-role"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "jumphost_profile" {
+  name = "${var.project_name}-${var.environment}-jumphost-profile"
+  role = aws_iam_role.jumphost_role.name
+
+  tags = merge(var.common_tags, {
+    Name = "${var.project_name}-${var.environment}-jumphost-profile"
+  })
 }

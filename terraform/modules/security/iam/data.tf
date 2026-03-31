@@ -4,7 +4,7 @@
 
 # Assume role policy document for generic OIDC role
 data "aws_iam_policy_document" "eks_oidc_assume_role_policy" {
-  count = var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "eks_oidc_assume_role_policy" {
 
 # Assume role policy document for Karpenter Controller (IRSA)
 data "aws_iam_policy_document" "karpenter_controller_assume_role_policy" {
-  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled && var.eks_oidc_url != "" ? 1 : 0
+  count = var.is_karpenter_enabled && var.is_eks_cluster_enabled ? 1 : 0
 
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]

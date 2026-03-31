@@ -128,6 +128,33 @@ if ! is_installed "docker"; then
     usermod -a -G docker ec2-user || true
 fi
 
+# Configure EKS kubeconfig with correct API version
+configure_kubeconfig() {
+    log_info "Configuring EKS kubeconfig..."
+    local cluster_name="finishline-infra-app-dev-eks"
+    local region="us-east-1"
+    local kubeconfig_dir="/home/ec2-user/.kube"
+    local kubeconfig_file="${kubeconfig_dir}/config"
+    
+    # Create .kube directory
+    mkdir -p "${kubeconfig_dir}"
+    chown ec2-user:ec2-user "${kubeconfig_dir}"
+    
+    # Generate kubeconfig
+    aws eks update-kubeconfig --name "${cluster_name}" --region "${region}" --kubeconfig "${kubeconfig_file}"
+    
+    # Fix API version (v1alpha1 is deprecated, use v1beta1)
+    if [ -f "${kubeconfig_file}" ]; then
+        sed -i 's|client.authentication.k8s.io/v1alpha1|client.authentication.k8s.io/v1beta1|g' "${kubeconfig_file}"
+        chown ec2-user:ec2-user "${kubeconfig_file}"
+        chmod 600 "${kubeconfig_file}"
+        log_info "Kubeconfig configured with correct API version (v1beta1)"
+    fi
+}
+
+# Run kubeconfig configuration (will fail gracefully if cluster doesn't exist yet)
+configure_kubeconfig || log_warn "Kubeconfig configuration skipped (cluster may not exist yet)"
+
 # Final Check
 echo "Setup Complete: $(date)" > "${SIGNAL_FILE}"
 log_info "=============================================="

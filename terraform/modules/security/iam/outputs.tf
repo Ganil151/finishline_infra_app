@@ -156,3 +156,20 @@ output "random_suffix" {
   description = "Random suffix generated for resource naming"
   value       = random_integer.random_suffix.result
 }
+#============================================================
+# Jumphost IAM Outputs
+#============================================================
+output "jumphost_instance_profile_name" {
+  description = "Name of the IAM instance profile for the jumphost"
+  value       = aws_iam_instance_profile.jumphost_profile.name
+}
+
+output "jumphost_role_arn" {
+  description = "ARN of the IAM role for the jumphost"
+  value       = aws_iam_role.jumphost_role.arn
+}
+
+output "jumphost_role_name" {
+  description = "Name of the IAM role for the jumphost"
+  value       = aws_iam_role.jumphost_role.name
+}

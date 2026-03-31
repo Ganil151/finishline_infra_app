@@ -21,8 +21,8 @@ variable "aws_region" {
   type        = string
 }
 
-variable "computed_tags" {
-  description = "Additional tags to apply"
+variable "common_tags" {
+  description = "Centralized common tags from root.hcl"
   type        = map(string)
 }
 
@@ -69,7 +69,7 @@ variable "availability_zones" {
   type        = list(string)
 }
 
-variable "ingress_rules_transform" {
+variable "ingress_rules" {
   description = "List of ingress rules for the network ACL"
   type = list(object({
     rule_no    = number
@@ -81,7 +81,7 @@ variable "ingress_rules_transform" {
   }))
 }
 
-variable "egress_rules_transform" {
+variable "egress_rules" {
   description = "List of egress rules for the network ACL"
   type = list(object({
     rule_no    = number

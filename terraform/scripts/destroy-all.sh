@@ -205,11 +205,19 @@ check_prerequisites() {
     log_warn "WARNING: This will PERMANENTLY DELETE all resources!"
 }
 
+# Helper function to check if a module directory exists
+module_exists() {
+    local dir="$1"
+    [[ -d "$dir" ]] && [[ -f "$dir/terragrunt.hcl" ]]
+}
+
 # Function to run terragrunt destroy in a directory with error handling
 run_terragrunt_destroy() {
     local dir="$1"
     local module="$2"
     local step="$3"
+    local max_retries=2
+    local retry_count=0
 
     echo ""
     log_info "Step $step: Destroying $module..."
@@ -229,16 +237,50 @@ run_terragrunt_destroy() {
 
     cd "$dir"
 
-    # Run terragrunt destroy with auto-approve flag (replaces deprecated -force)
-    if terragrunt destroy -auto-approve --terragrunt-non-interactive; then
-        log_info "✓ $module destroyed successfully"
-        return 0
-    else
-        local exit_code=$?
-        log_error "✗ $module failed with exit code: $exit_code"
-        FAILED_MODULES+=("$module")
-        return 1
-    fi
+    # Retry logic for transient errors
+    while [[ $retry_count -le $max_retries ]]; do
+        if [[ $retry_count -gt 0 ]]; then
+            log_warn "Retry attempt $retry_count of $max_retries for $module..."
+        fi
+
+        # Run terragrunt destroy with auto-approve flag and capture output
+        local output
+        if output=$(terragrunt destroy -auto-approve --terragrunt-non-interactive 2>&1); then
+            log_info "✓ $module destroyed successfully"
+            return 0
+        else
+            local exit_code=$?
+            log_error "✗ $module failed with exit code: $exit_code"
+            
+            # Show last 20 lines of error output for debugging
+            log_error "Error output (last 20 lines):"
+            echo "$output" | tail -20 | sed 's/^/    /'
+            
+            # Check for specific known errors that might benefit from retry
+            if echo "$output" | grep -q "RequestLimitExceeded\|Throttling\|TooManyRequests"; then
+                log_warn "AWS throttling detected, will retry..."
+                retry_count=$((retry_count+1))
+                sleep 5
+                continue
+            fi
+            
+            # Check for dependency errors that won't benefit from retry
+            if echo "$output" | grep -q "dependency.*not found\|ResourceReferenceError"; then
+                log_error "Dependency error detected, skipping retries"
+                FAILED_MODULES+=("$module")
+                return 1
+            fi
+            
+            # For other errors, don't retry
+            FAILED_MODULES+=("$module")
+            return 1
+        fi
+    done
+
+    # All retries exhausted
+    log_error "✗ $module failed after $max_retries retries"
+    FAILED_MODULES+=("$module")
+    return 1
 }
 
 # Destroy modules for a specific environment (in reverse order)
@@ -268,22 +310,53 @@ destroy_environment() {
     # 4. ALB (depends on VPC and SG)
     # 5. Security Groups (depends on VPC)
     # 6. VPC (creates networking foundation)
-    # 7. KMS (creates encryption keys for EKS)
+    # 7. KMS (creates encryption keys for EKS) - only in prod/stage
     # 8. Key Pair (creates SSH key for jumphost)
     # 9. IAM (creates roles - destroyed last)
     #-----------------------------
 
     local env_failed=0
+    local step=1
+    local total_steps=9
 
-    run_terragrunt_destroy "$env_dir/compute/karpenter" "Karpenter Module" "1/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/compute/jumphost" "Jumphost Module" "2/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/compute/eks" "EKS Module" "3/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/networking/alb" "ALB Module" "4/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/networking/sg" "Security Groups Module" "5/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/networking/vpc" "VPC Module" "6/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/security/kms" "KMS Module" "7/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/security/key_pair" "Key Pair Module" "8/9" || env_failed=1
-    run_terragrunt_destroy "$env_dir/security/iam" "IAM Module" "9/9" || env_failed=1
+    # Karpenter first (depends on EKS and IAM)
+    run_terragrunt_destroy "$env_dir/compute/karpenter" "Karpenter Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # Jumphost (depends on VPC, SG, Key Pair)
+    run_terragrunt_destroy "$env_dir/compute/jumphost" "Jumphost Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # EKS (depends on IAM, VPC, SG, KMS)
+    run_terragrunt_destroy "$env_dir/compute/eks" "EKS Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # ALB (depends on VPC and SG)
+    run_terragrunt_destroy "$env_dir/networking/alb" "ALB Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # Security Groups (depends on VPC)
+    run_terragrunt_destroy "$env_dir/networking/sg" "Security Groups Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # VPC (networking foundation)
+    run_terragrunt_destroy "$env_dir/networking/vpc" "VPC Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # KMS (only exists in prod and stage, NOT in dev)
+    if module_exists "$env_dir/security/kms"; then
+        run_terragrunt_destroy "$env_dir/security/kms" "KMS Module" "$step/$total_steps" || env_failed=1
+    else
+        log_info "KMS Module not found in $env (expected for dev) - skipping"
+    fi
+    step=$((step+1))
+
+    # Key Pair
+    run_terragrunt_destroy "$env_dir/security/key_pair" "Key Pair Module" "$step/$total_steps" || env_failed=1
+    step=$((step+1))
+
+    # IAM (destroyed last - other modules depend on it)
+    run_terragrunt_destroy "$env_dir/security/iam" "IAM Module" "$step/$total_steps" || env_failed=1
 
     # Return to environments directory
     cd "$ENV_DIR"

@@ -1,2065 +1,1920 @@
-# FinishLine Infrastructure Runbook
+# FinishLine Infrastructure Runbook: Master Guide
 
 **Document Owner:** FinishLine Infrastructure Team
-**Last Updated:** March 27, 2026
-**Environments:** Dev, Stage, Prod
-**Classification:** Internal Operations
-**Version:** 3.1
+**Major Version:** 5.0 (Comprehensive Terraform Audit Edition)
+**Last Updated:** March 30, 2026
+**Author:** Ganil Batist Yan (DevSecOps Lead)
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-  - [Infrastructure Architecture](#infrastructure-architecture)
-  - [Deployment Order](#deployment-order)
-  - [Environment Configuration](#environment-configuration)
-  - [Karpenter Configuration by Environment](#karpenter-configuration-by-environment)
-- [Prerequisites](#prerequisites)
-  - [Required Tools](#required-tools)
-  - [AWS Configuration](#aws-configuration)
-  - [Clone Repository](#clone-repository)
-- [Pre-Launch Checklist](#pre-launch-checklist)
-  - [Critical Configuration Checks](#critical-configuration-checks)
-  - [Security Hardening Review](#security-hardening-review)
-  - [Environment Readiness](#environment-readiness)
-- [Known Issues and Fixes](#known-issues-and-fixes)
-  - [NAT Gateway Availability Mode Error](#nat-gateway-availability-mode-error)
-  - [Terragrunt Module Path Issues](#terragrunt-module-path-issues)
-  - [Missing Variable Errors](#missing-variable-errors)
-  - [Dependency Output Errors](#dependency-output-errors)
-  - [Helm Provider set Block Syntax Error](#helm-provider-set-block-syntax-error)
-  - [Karpenter CRD Recognition Error](#karpenter-crd-recognition-error)
-- [Part 1: Networking Deployment](#part-1-networking-deployment)
-  - [Step 1: Bootstrap State Backend](#step-1-bootstrap-state-backend)
-  - [Step 2: Deploy VPC](#step-2-deploy-vpc)
-  - [Step 3: Deploy Security Groups](#step-3-deploy-security-groups)
-  - [Step 4: Deploy ALB](#step-4-deploy-alb)
-  - [Step 5: Verify Networking](#step-5-verify-networking)
-- [Part 2: Security Module Deployment](#part-2-security-module-deployment)
-  - [Step 1: Deploy Key Pair](#step-1-deploy-key-pair)
-  - [Step 2: Deploy IAM Roles](#step-2-deploy-iam-roles)
-  - [Step 3: Configure OIDC for IRSA](#step-3-configure-oidc-for-irsa)
-- [Part 3: Compute Deployment](#part-3-compute-deployment)
-  - [Step 1: Deploy EKS Cluster](#step-1-deploy-eks-cluster)
-  - [Step 2: Deploy Jumphost](#step-2-deploy-jumphost)
-  - [Step 3: Deploy Karpenter](#step-3-deploy-karpenter)
-    - [3.1 Apply Terraform Module (EC2NodeClass & NodePool)](#31-apply-terraform-module-ec2nodeclass--nodepool)
-    - [3.2 Install Karpenter Helm Chart](#32-install-karpenter-helm-chart)
-    - [3.3 Verify Karpenter](#33-verify-karpenter)
-    - [3.4 Test Karpenter Scaling](#34-test-karpenter-scaling)
-    - [3.5 Karpenter Troubleshooting](#35-karpenter-troubleshooting)
-- [Part 4: Security Hardening](#part-4-security-hardening)
-  - [Enable HTTPS/TLS](#enable-httpstls)
-  - [Deploy AWS WAF](#deploy-aws-waf)
-  - [Enable Access Logging](#enable-access-logging)
-  - [Configure Monitoring](#configure-monitoring)
-- [Verification Guide](#verification-guide)
-  - [Verify Networking](#verify-networking)
-  - [Verify Security](#verify-security)
-  - [Verify Compute](#verify-compute)
-  - [Verify Karpenter](#verify-karpenter)
-- [Operations](#operations)
-  - [Daily Checks](#daily-checks)
-  - [Incident Response](#incident-response)
-  - [Troubleshooting](#troubleshooting)
-- [Appendix](#appendix)
-  - [A. Cost Estimates](#a-cost-estimates)
-  - [B. Quick Reference Commands](#b-quick-reference-commands)
-  - [C. Related Documentation](#c-related-documentation)
+- [FinishLine Infrastructure Runbook: Master Guide](#finishline-infrastructure-runbook-master-guide)
+  - [Table of Contents](#table-of-contents)
+  - [Infrastructure Overview](#infrastructure-overview)
+    - [The Dev-First Promotion Mindset](#the-dev-first-promotion-mindset)
+    - [High-Level Architecture](#high-level-architecture)
+    - [Terraform Module Architecture](#terraform-module-architecture)
+  - [Part 1: Prerequisites \& Initial Setup](#part-1-prerequisites--initial-setup)
+    - [Required Toolchain](#required-toolchain)
+    - [AWS CLI Authentication (IAM 101)](#aws-cli-authentication-iam-101)
+  - [Part 2: Step 0 - Bootstrapping the Project](#part-2-step-0---bootstrapping-the-project)
+    - [Creating the Remote State Infrastructure](#creating-the-remote-state-infrastructure)
+    - [Enabling State Versioning \& Governance](#enabling-state-versioning--governance)
+    - [Terragrunt Root Configuration](#terragrunt-root-configuration)
+  - [Part 3: Phase 1 - Launching Development (Dev)](#part-3-phase-1---launching-development-dev)
+    - [Step 1: Network Foundation (VPC, SG, ALB)](#step-1-network-foundation-vpc-sg-alb)
+      - [1.1 Deploy the VPC (Virtual Private Cloud)](#11-deploy-the-vpc-virtual-private-cloud)
+      - [1.2 Network ACLs (NACLs): Master the Stateless Layer](#12-network-acls-nacls-master-the-stateless-layer)
+      - [1.3 Deploy Security Groups](#13-deploy-security-groups)
+      - [1.4 Deploy the Shared ALB](#14-deploy-the-shared-alb)
+    - [Step 2: Identity \& Access (IAM, OIDC)](#step-2-identity--access-iam-oidc)
+      - [2.1 Generate the SSH Key Pair](#21-generate-the-ssh-key-pair)
+      - [2.2 Provision IAM Roles](#22-provision-iam-roles)
+    - [Step 3: Compute \& Scaling (EKS, Karpenter)](#step-3-compute--scaling-eks-karpenter)
+      - [3.1 Deploy the EKS Cluster](#31-deploy-the-eks-cluster)
+      - [3.2 Deploy the Karpenter Autoscaler](#32-deploy-the-karpenter-autoscaler)
+    - [Step 4: Dev Verification Scripts](#step-4-dev-verification-scripts)
+    - [Step 4.1: Comprehensive EKS Cluster Verification](#step-41-comprehensive-eks-cluster-verification)
+      - [4.1.1 Cluster Information \& Status](#411-cluster-information--status)
+      - [4.1.2 Node Group Verification](#412-node-group-verification)
+      - [4.1.3 EKS Addons Verification](#413-eks-addons-verification)
+      - [4.1.4 Kubernetes Cluster Verification (kubectl)](#414-kubernetes-cluster-verification-kubectl)
+      - [4.1.5 EKS Access \& Authentication Verification](#415-eks-access--authentication-verification)
+      - [4.1.6 VPC CNI \& Network Verification](#416-vpc-cni--network-verification)
+      - [4.1.7 EKS Control Plane Logs](#417-eks-control-plane-logs)
+      - [4.1.8 EKS Cost \& Resource Utilization](#418-eks-cost--resource-utilization)
+      - [4.1.9 EKS Security Verification](#419-eks-security-verification)
+      - [4.1.10 Quick Health Check Script](#4110-quick-health-check-script)
+  - [Part 4: Phase 2 - Environment Promotion (Stage \& Prod)](#part-4-phase-2---environment-promotion-stage--prod)
+    - [Step 5: Migrating to Stage (10.1.x.x)](#step-5-migrating-to-stage-101xx)
+      - [5.1 Environment Variable Management](#51-environment-variable-management)
+      - [5.2 Deploy Stage](#52-deploy-stage)
+    - [Step 6: Launching Production (10.2.x.x)](#step-6-launching-production-102xx)
+      - [6.1 UAT Approval \& Pre-Launch](#61-uat-approval--pre-launch)
+      - [6.2 Deploy Production](#62-deploy-production)
+    - [Environment-Specific Configurations](#environment-specific-configurations)
+  - [Part 5: DevSecOps Hardening](#part-5-devsecops-hardening)
+    - [Step 7: SSL/TLS (HTTPS) Management](#step-7-ssltls-https-management)
+    - [Step 8: WAF (Web Application Firewall)](#step-8-waf-web-application-firewall)
+    - [Step 9: Access Logging \& Audit Chains](#step-9-access-logging--audit-chains)
+  - [Part 6: Operations \& Troubleshooting](#part-6-operations--troubleshooting)
+    - [Step 10: Daily Health Checks](#step-10-daily-health-checks)
+    - [Step 11: Infrastructure Decommissioning (Destroy)](#step-11-infrastructure-decommissioning-destroy)
+    - [Step 12: Manual S3 Version Deletion Guide](#step-12-manual-s3-version-deletion-guide)
+    - [Automated Deployment Scripts](#automated-deployment-scripts)
+  - [Appendix: Technical Reference](#appendix-technical-reference)
+    - [Terraform Module Inventory](#terraform-module-inventory)
+    - [IAM Role Inventory](#iam-role-inventory)
+      - [EKS Cluster Roles](#eks-cluster-roles)
+      - [EKS Node Group Roles](#eks-node-group-roles)
+      - [Karpenter Roles (Dev Only)](#karpenter-roles-dev-only)
+      - [EBS CSI Driver Roles](#ebs-csi-driver-roles)
+      - [Jumphost Roles](#jumphost-roles)
+    - [VPC Endpoints Configuration](#vpc-endpoints-configuration)
+    - [Common Error Codes \& Fixes](#common-error-codes--fixes)
+      - [Terraform/Terragrunt Errors](#terraformterragrunt-errors)
+      - [Kubernetes/kubectl Errors](#kuberneteskubectl-errors)
+      - [Karpenter-Specific Errors](#karpenter-specific-errors)
+      - [ALB/Networking Errors](#albnetworking-errors)
+    - [Quick Troubleshooting Commands](#quick-troubleshooting-commands)
 
 ---
 
-## Overview
+## Infrastructure Overview
 
-This runbook provides step-by-step instructions for deploying and operating the FinishLine Infrastructure on AWS using Terraform and Terragrunt.
+### The Dev-First Promotion Mindset
 
-### Infrastructure Architecture
+This project is built on the **"Dev-First" standard**. This means that no code or infrastructure configuration is ever applied directly to Production.
 
-```mermaid
-flowchart TB
-    subgraph "Networking Layer"
-        VPC[VPC Module]
-        SG[Security Groups]
-        ALB[Application Load Balancer]
-    end
+1.  **Development (`dev`)**: A Sandbox for failure. We test spot instances, aggressive scaling, and initial security policies.
+2.  **Stage (`stage`)**: A mirror of Prod. We validate that the `dev` configurations work in a highly available, multi-AZ environment.
+3.  **Production (`prod`)**: The hardened environment. High-priority, on-demand capacity, and restricted public access.
 
-    subgraph "Security Layer"
-        KeyPair[Key Pair]
-        IAM[IAM Roles & OIDC]
-        WAF[WAF Rules]
-    end
-
-    subgraph "Compute Layer"
-        EKS[EKS Cluster]
-        Karpenter[Karpenter Autoscaler]
-        Jumphost[Jumphost]
-    end
-
-    VPC --> SG
-    SG --> ALB
-    ALB --> EKS
-    KeyPair --> Jumphost
-    IAM --> EKS
-    IAM --> Karpenter
-    WAF --> ALB
-    Karpenter --> EKS
-
-    style VPC fill:#7b68ee
-    style SG fill:#4169e1
-    style ALB fill:#ff9900
-    style KeyPair fill:#32cd32
-    style IAM fill:#32cd32
-    style WAF fill:#ff6b6b
-    style EKS fill:#00d26a
-    style Karpenter fill:#00d26a
-    style Jumphost fill:#00d26a
-```
-
-### Deployment Order
+### High-Level Architecture
 
 ```mermaid
-gantt
-    title Infrastructure Deployment Sequence
-    dateFormat X
-    axisFormat Step %s
+flowchart TD
+    subgraph "Phase 1: Validation"
+        dev[Development Environment]
+        dev_verify[Automated Verification]
+        dev -->|Deployment| dev_verify
+    end
 
-    section Networking (Part 1)
-    Bootstrap          :0, 1
-    VPC Module         :1, 2
-    Security Groups    :3, 2
-    ALB Module         :5, 2
-    Verification       :7, 1
+    subgraph "Phase 2: Success Promotion"
+        stage[Staging Environment]
+        prod[Production Environment]
+        dev_verify -->|Approved Migration| stage
+        stage -->|UAT Gate| prod
+    end
 
-    section Security (Part 2)
-    Key Pair           :8, 1
-    IAM Roles          :9, 2
-    OIDC Config        :11, 2
-
-    section Compute (Part 3)
-    EKS Cluster        :14, 3
-    Jumphost           :17, 2
-    Karpenter TF       :19, 2
-    Karpenter Helm     :21, 2
-
-    section Hardening (Part 4)
-    HTTPS/WAF/Logging  :24, 3
+    style dev fill:#00d26a,stroke:#333
+    style stage fill:#ff9900,stroke:#333
+    style prod fill:#ff6b6b,stroke:#333
 ```
 
-### Environment Configuration
+### Terraform Module Architecture
 
-| Environment | AWS Region | VPC CIDR    | Karpenter Enabled | Purpose               |
-| ----------- | ---------- | ----------- | ----------------- | --------------------- |
-| **Dev**     | us-east-1  | 10.0.0.0/16 | Yes               | Development & Testing |
-| **Stage**   | us-east-1  | 10.1.0.0/16 | Yes               | Staging/Pre-prod      |
-| **Prod**    | us-east-1  | 10.2.0.0/16 | Yes               | Production            |
+The infrastructure is organized using a modular Terragrunt structure:
 
-### Karpenter Configuration by Environment
-
-| Environment | Instance Types                             | Max CPU | Capacity Types  |
-| ----------- | ------------------------------------------ | ------- | --------------- |
-| **Dev**     | m5.large, m5.xlarge, c5.large              | 50      | spot, on-demand |
-| **Stage**   | m5.large, m5.xlarge, m5.2xlarge, c5.large  | 100     | spot, on-demand |
-| **Prod**    | m5.large, m5.xlarge, m5.2xlarge, c5.xlarge | 500     | on-demand, spot |
+```
+terraform/
+├── root.hcl                          # Root Terragrunt configuration
+├── environments/
+│   ├── dev/                          # Monolithic dev environment
+│   │   └── terragrunt.hcl           # Single file for all dev modules
+│   ├── stage/                        # Modular stage environment
+│   │   ├── networking/
+│   │   │   ├── vpc/                 # VPC configuration
+│   │   │   ├── sg/                  # Security groups
+│   │   │   └── alb/                 # Application Load Balancer
+│   │   ├── security/
+│   │   │   ├── iam/                 # IAM roles and policies
+│   │   │   └── key_pair/            # SSH key pair
+│   │   └── compute/
+│   │       ├── eks/                 # EKS cluster
+│   │       ├── karpenter/           # Karpenter autoscaler (optional)
+│   │       └── jumphost/            # Bastion host
+│   └── prod/                         # Modular prod environment
+│       ├── networking/
+│       │   ├── vpc/
+│       │   ├── sg/
+│       │   └── alb/
+│       ├── security/
+│       │   ├── iam/
+│       │   ├── key_pair/
+│       │   └── kms/                 # KMS keys (prod only)
+│       └── compute/
+│           ├── eks/
+│           └── jumphost/
+├── modules/
+│   ├── composition/
+│   │   └── dev/                      # Dev composition module
+│   ├── compute/
+│   │   ├── eks/                      # EKS cluster module
+│   │   │   ├── main.tf               # EKS cluster and node group resources
+│   │   │   ├── addons.tf             # EKS addons (vpc-cni, coredns, kube-proxy, ebs-csi)
+│   │   │   ├── variables.tf          # Module variables
+│   │   │   ├── outputs.tf            # Module outputs
+│   │   │   ├── locals.tf             # Local values
+│   │   │   └── data.tf               # Data sources
+│   │   ├── karpenter/                # Karpenter autoscaler module
+│   │   │   ├── main.tf               # Karpenter CRDs, Helm chart, NodePool, EC2NodeClass
+│   │   │   └── variables.tf
+│   │   └── jumphost/                 # Bastion host module
+│   ├── networking/
+│   │   ├── vpc/                      # VPC, subnets, NAT gateway, route tables, VPC endpoints
+│   │   ├── sg/                       # Security groups for EKS, ALB, Jumphost, MySQL
+│   │   └── alb/                      # Application Load Balancer, target groups, listeners
+│   └── security/
+│       ├── iam/                      # IAM roles for EKS, nodegroups, Karpenter, EBS CSI, Jumphost
+│       └── key_pair/                 # SSH key pair for Jumphost access
+└── scripts/
+    ├── run-all.sh                    # Automated deployment script with dependency ordering
+    ├── destroy-all.sh                # Automated destruction script
+    ├── verify-addons.sh              # EKS addons verification
+    ├── verify-karpenter.sh           # Karpenter verification
+    ├── pre-launch-check.sh           # Pre-launch validation
+    ├── jumphost-install-tools.sh     # Jumphost bootstrap script
+    ├── fix-karpenter.sh              # Karpenter troubleshooting
+    ├── fix-karpenter-controller-role.sh  # IRSA fix script
+    └── cleanup_karpenter_crds.ps1    # Windows Karpenter cleanup
+```
 
 ---
 
-## Prerequisites
+## Part 1: Prerequisites & Initial Setup
 
-### Required Tools
+### Required Toolchain
 
-| Tool       | Version   | Installation              |
-| ---------- | --------- | ------------------------- |
-| Terraform  | >= 1.5.0  | `tfenv install 1.6.0`     |
-| Terragrunt | >= 0.50.0 | `brew install terragrunt` |
-| AWS CLI    | >= 2.0    | `brew install awscli`     |
-| kubectl    | >= 1.28   | `brew install kubectl`    |
-| Helm       | >= 3.12.0 | `brew install helm`       |
-| jq         | >= 1.6    | `brew install jq`         |
+| Tool           | Recommended version | Purpose                                                                       |
+| :------------- | :------------------ | :---------------------------------------------------------------------------- |
+| **Terraform**  | `1.6.0+`            | The engine for Infrastructure as Code (IaC).                                  |
+| **Terragrunt** | `0.54.0+`           | The wrapper for keeping Terraform configurations DRY (Don't Repeat Yourself). |
+| **AWS CLI**    | `2.15.0+`           | Communicates your terminal commands to the AWS cloud.                         |
+| **eksctl**     | `0.170.0+`          | The official CLI for creating, managing, and interacting with EKS clusters.   |
+| **kubectl**    | `1.29+`             | The CLI for managing Kubernetes (EKS) workloads.                              |
+| **Helm**       | `3.14.0+`           | The package manager for Kubernetes applications (Karpenter).                  |
 
-### AWS Configuration
+### AWS CLI Authentication (IAM 101)
 
 > [!NOTE]
-> **What this does:** The AWS CLI (Command Line Interface) is how your local computer authenticates with the AWS Cloud. Without this step, Terraform has no permission to construct anything on your behalf.
+> **What this does:** Before the project can build anything, your computer must be granted permission. `aws configure` creates a local profile that Terrafom uses to "Assume a Role" or use an "IAM User" identity.
 
 ```bash
-# 1. Provide your long-term Access Keys to the terminal
-#    This securely creates the ~/.aws/credentials file on your system.
+# 1. Configure your local AWS profile
 aws configure
 
-# 2. Verify your terminal has successfully negotiated a Trust Relationship with AWS
-#    STS stands for 'Security Token Service'. This command proves exactly WHO AWS thinks you are at this exact moment.
+# 2. Verify who the terminal thinks you are
 aws sts get-caller-identity
 
-# Expected successful output (proves you are authenticated correctly):
+# Success Output (Example):
 # {
-#     "UserId": "AIDAXXXXXXXXXXXXXXXXX",
+#     "UserId": "AIDAXxxxxxxxxxxxxxxx",
 #     "Account": "123456789012",
-#     "Arn": "arn:aws:iam::123456789012:user/your-user"
+#     "Arn": "arn:aws:iam::123456789012:user/devsecops-admin"
 # }
 ```
 
-### Clone Repository
-
-```bash
-git clone https://github.com/finishline/finishline_infra_app.git
-cd finishline_infra_app/terraform
-```
-
 ---
 
-## Pre-Launch Checklist
+## Part 2: Step 0 - Bootstrapping the Project
 
-**IMPORTANT:** Complete all items in this checklist before deploying to production. This prevents common failures and security misconfigurations identified during the project audit.
+In professional DevOps, the "State" (the blueprint of what is actually built) must be stored in a shared, remote, and highly available location. This project uses an **S3 Bucket** for the Terraform backend.
 
-### Critical Configuration Checks
+### Creating the Remote State Infrastructure
 
-#### 1. Populate Missing Terragrunt Configurations
+Before running any `terragrunt` or `terraform` command, you **MUST** manually create the foundation for the configuration files to live in.
 
-**Status:** 🔴 CRITICAL - Will cause deployment failures
-
-The following files are empty and must be populated before deployment:
-
-**Prod Environment (9 files):**
-
-```bash
-# Navigate to each directory and create terragrunt.hcl
-environments/prod/networking/vpc/terragrunt.hcl
-environments/prod/networking/sg/terragrunt.hcl
-environments/prod/networking/alb/terragrunt.hcl
-environments/prod/security/key_pair/terragrunt.hcl
-environments/prod/compute/jumphost/terragrunt.hcl
-environments/prod/networking/terragrunt.hcl
-environments/prod/security/terragrunt.hcl
-environments/prod/compute/terragrunt.hcl
-environments/prod/security/kms/terragrunt.hcl
-```
-
-**Stage Environment (9 files):**
+> [!IMPORTANT]
+> **DevOps 101: The S3 Global Namespace Masterclass**
+> **Concept:** Unlike almost every other AWS resource, **S3 bucket names are GLOBALLY UNIQUE** across all AWS accounts in the entire world.
+>
+> **Why it's necessary:** When you name a bucket `my-terraform-state`, AWS converts it into a DNS record. If _anyone_ else on earth has used that name, your command will fail with `BucketAlreadyExists`.
+>
+> **The Suffix/Prefix Strategy:** We use a unique 8-character hex string (like `e534d5ea`) at the end of our bucket names. This ensures:
+>
+> 1.  **Zero Collisions:** Your project doesn't conflict with other students or companies.
+> 2.  **Governance:** You can track resource ownership in the AWS bill.
+> 3.  **Security:** It prevents "bucket squatting" attacks where a malicious actor guesses your bucket name and creates it first.
+>
+> **How to create your own unique ID:**
+> If `e534d5ea` is already taken or you want a fresh project, run this command in your terminal to generate a random 8-character string:
+>
+> ```bash
+> openssl rand -hex 4
+> ```
 
 ```bash
-environments/stage/networking/vpc/terragrunt.hcl
-environments/stage/networking/sg/terragrunt.hcl
-environments/stage/networking/alb/terragrunt.hcl
-environments/stage/security/key_pair/terragrunt.hcl
-environments/stage/compute/jumphost/terragrunt.hcl
-environments/stage/networking/terragrunt.hcl
-environments/stage/security/terragrunt.hcl
-environments/stage/compute/terragrunt.hcl
-environments/stage/security/kms/terragrunt.hcl
+# 1. Create the S3 State Bucket (FinishLine Master Bucket)
+#    CRITICAL: Replace 'e534d5ea' with YOUR unique ID if the command fails.
+aws s3api create-bucket \
+    --bucket finishline-infra-app-e534d5ea \
+    --region us-east-1
+
+# 2. Update the 'bucket' value in terraform/root.hcl
+#    The code MUST match the manual bucket you just created.
+#    ...
+#    bucket = "finishline-infra-app-[YOUR-UNIQUE-ID]"
+#    ...
+
+# 3. Enable Versioning on the Bucket
+#    Critical: This allows you to "roll back" to an older state file if a deployment crashes.
+aws s3api put-bucket-versioning \
+    --bucket finishline-infra-app-e534d5ea \
+    --versioning-configuration Status=Enabled
+
+# 4. Enable Server-Side Encryption (AES-256)
+aws s3api put-bucket-encryption \
+    --bucket finishline-infra-app-e534d5ea \
+    --server-side-encryption-configuration '{
+        "Rules": [
+            {
+                "ApplyServerSideEncryptionByDefault": {
+                    "SSEAlgorithm": "AES256"
+                }
+            }
+        ]
+    }'
 ```
 
-**Template for VPC (copy and adapt for each environment):**
+### Enabling State Versioning & Governance
+
+Verify the bucket is ready via the CLI:
 
 ```bash
-# Reference: environments/dev/networking/vpc/terragrunt.hcl
-cp environments/dev/networking/vpc/terragrunt.hcl environments/prod/networking/vpc/terragrunt.hcl
-
-# Update for prod:
-# - environment = "prod"
-# - vpc_cidr = "10.2.0.0/16"
-# - Update tags accordingly
+# Check bucket status
+aws s3api get-bucket-versioning --bucket finishline-infra-app-e534d5ea
 ```
 
-#### 2. Add Missing Karpenter Controller Role ARN (Prod)
+### Terragrunt Root Configuration
 
-**Status:** 🔴 CRITICAL - Will cause Karpenter deployment failure
+The [`terraform/root.hcl`](terraform/root.hcl) file contains the central configuration:
 
-File: `environments/prod/compute/karpenter/terragrunt.hcl`
+**Key Configurations:**
+
+- **S3 Backend:** `finishline-infra-app-e534d5ea` with encryption and lockfile enabled
+- **Region:** `us-east-1`
+- **Common Tags:** Project, Environment, ManagedBy, Terraform
+- **Provider Generation:** Automatic AWS, Kubernetes, Helm, and Kubectl providers
+- **Conditional Logic:** Kubernetes providers only generated for EKS/Karpenter modules
 
 ```hcl
-# ADD THIS LINE (currently missing):
-karpenter_controller_role_arn = dependency.iam.outputs.karpenter_controller_role_arn
-```
-
-**Verification:**
-
-```bash
-cd environments/prod/compute/karpenter
-terragrunt plan
-
-# Should NOT show error about missing variable
-```
-
-#### 3. Fix S3 Access Type Validation
-
-**Status:** 🔴 CRITICAL - Validation mismatch
-
-File: `modules/security/iam/variables.tf` (lines 74-79)
-
-**Current (incorrect):**
-
-```hcl
-validation {
-  condition     = contains(["read", "write", "readwrite"], var.s3_access_type)
-  error_message = "s3_access_type must be one of: read, write, or readwrite."
-}
-```
-
-**Fix (add "delete"):**
-
-```hcl
-validation {
-  condition     = contains(["read", "write", "delete", "readwrite"], var.s3_access_type)
-  error_message = "s3_access_type must be one of: read, write, delete, or readwrite."
-}
-```
-
-#### 4. Fix Variable Description (ALB Module)
-
-**Status:** 🔴 CRITICAL - Causes configuration confusion
-
-File: `modules/networking/alb/variables.tf` (line 33)
-
-**Change:**
-
-```hcl
-# FROM:
-description = "CIDR block for the VPC"
-
-# TO:
-description = "ID of the VPC"
-```
-
-#### 5. Add Missing depends_on for OIDC Resources
-
-**Status:** 🔴 CRITICAL - Race condition during apply
-
-File: `modules/security/iam/main.tf`
-
-Add to `aws_iam_role.eks_oidc_role`:
-
-```hcl
-resource "aws_iam_role" "eks_oidc_role" {
-  # ... existing config ...
-
-  depends_on = [aws_iam_openid_connect_provider.eks_oidc_provider]
-}
-```
-
-#### 6. Create KMS Module or Remove References
-
-**Status:** 🔴 CRITICAL - References non-existent module
-
-**Option A: Create KMS module**
-
-```bash
-mkdir -p modules/security/kms
-# Create main.tf, variables.tf, outputs.tf with KMS key resources
-```
-
-**Option B: Remove references from prod/stage configs**
-
-```bash
-# Comment out or remove KMS-related terragrunt.hcl files
-```
-
----
-
-### Security Hardening Review
-
-#### 1. Restrict SSH Access (NACL Rules)
-
-**Status:** 🟠 HIGH - SSH open to internet
-
-File: `environments/dev/networking/vpc/terragrunt.hcl`
-
-**Current (insecure):**
-
-```hcl
-ingress_rules_transform = [
-  { rule_no = 120, from_port = 22, to_port = 22, cidr_block = "0.0.0.0/0" },
-]
-```
-
-**Fix (restrict to known IPs):**
-
-```hcl
-ingress_rules_transform = [
-  { rule_no = 120, from_port = 22, to_port = 22, cidr_block = "YOUR_OFFICE_IP/32" },
-]
-```
-
-#### 2. Restrict EKS Public Access CIDR (Prod)
-
-**Status:** 🟠 HIGH - Open to internet in prod config
-
-File: `environments/prod/compute/eks/terragrunt.hcl` (line 44)
-
-**Change:**
-
-```hcl
-# FROM:
-public_access_cidrs = ["0.0.0.0/0"]
-
-# TO (restrict to specific IPs):
-public_access_cidrs = ["YOUR_OFFICE_IP/32", "YOUR_VPN_CIDR/24"]
-```
-
-#### 3. Review Security Group Rules
-
-**Status:** 🟠 HIGH - HTTP/HTTPS open to internet
-
-File: `environments/dev/networking/sg/terragrunt.hcl`
-
-**Consider restricting if not needed publicly:**
-
-```hcl
-# For internal applications:
-ingress_rules = [
-  { from_port = 80, cidr_blocks = ["10.0.0.0/16"] },   # VPC only
-  { from_port = 443, cidr_blocks = ["10.0.0.0/16"] },  # VPC only
-]
-```
-
-#### 4. Secure Private Key Storage
-
-**Status:** 🟠 HIGH - Keys written to filesystem
-
-**Current behavior:** Private keys stored in Terraform working directory
-
-**Recommended actions:**
-
-1. Immediately after deployment, move keys to AWS Secrets Manager:
-
-```bash
-aws secretsmanager create-secret \
-  --name finishline-dev-key \
-  --secret-string file://finishline-infra-app-dev-key.pem
-```
-
-2. Delete local file:
-
-```bash
-shred -u finishline-infra-app-dev-key.pem
-```
-
-3. Update module to use Secrets Manager (future enhancement)
-
-#### 5. Review Karpenter IAM Policy Scope
-
-**Status:** 🟡 MEDIUM-HIGH - Overly permissive
-
-File: `modules/security/iam/main.tf` (lines 114-147)
-
-**Current:** `Resource = "*"` for EC2 actions
-
-**Recommended:** Scope to specific VPCs, subnets, and security groups using conditions:
-
-```hcl
-Condition {
-  StringEquals = {
-    "ec2:Vpc" = "arn:aws:ec2:us-east-1:ACCOUNT:vpc/vpc-xxxxx"
+remote_state {
+  backend = "s3"
+  config = {
+    bucket       = "finishline-infra-app-e534d5ea"
+    key          = "${path_relative_to_include()}/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 ```
 
-#### 6. Update Cluster Admin Principals
-
-**Status:** 🟡 MEDIUM - Empty admin list may lock out access
-
-File: `environments/*/compute/eks/terragrunt.hcl`
-
-**Add your IAM user/role:**
-
-```hcl
-cluster_admin_principals = [
-  "arn:aws:iam::ACCOUNT:user/your-admin-user",
-  "arn:aws:iam::ACCOUNT:role/your-admin-role"
-]
-```
-
 ---
 
-### Environment Readiness
+## Part 3: Phase 1 - Launching Development (Dev)
 
-#### Dev Environment
+This phase covers the complete deployment of the `dev` environment. We follow a strict **"Networking -> Security -> Compute"** dependency chain.
 
-> [!TIP]
-> **Terragrunt 101:** Think of Terraform as the engine that builds your infrastructure, and Terragrunt as the steering wheel. Administrator environments usually require heavy code duplication. Terragrunt solves this by reading the `terragrunt.hcl` files to automatically configure Terraform backend states and inject variables dynamically, keeping your code DRY (Don't Repeat Yourself).
-> Furthermore, the `run-all` command intelligently reads the `dependency "X"` blocks in your configs, building an execution graph to apply modules in the correct sequential order (e.g. VPC -> SG -> ALB -> EKS).
+### Step 1: Network Foundation (VPC, SG, ALB)
 
-```bash
-# 1. Verify all terragrunt.hcl files exist (Linux/Mac)
-#    This safety check explicitly searches for accidentally empty configurations that might break the dependency graph.
-find environments/dev -name "terragrunt.hcl" -exec test -s {} \; -print
+**Goal:** Build the secure "virtual house" where your servers will live. No compute can run without a stable VPC, security boundaries (Firewalls), and a front door (ALB).
 
-# Expected: All files should have content (not empty)
+#### 1.1 Deploy the VPC (Virtual Private Cloud)
 
-# 2. Validate configuration syntax across the entire environment hierarchy
-cd environments/dev
-terragrunt run-all validate
-
-# 3. Plan all resources
-#    This queries the live AWS API to see what exists, compares it to your code, and outputs a dry-run DIFF without altering state.
-terragrunt run-all plan -out=tfplan
-
-# 4. Review security group rules natively via the AWS API to ensure nothing is exposed dangerously outside of Terraform's view
-aws ec2 describe-security-groups --filters "Name=tag:Environment,Values=dev"
-
-# 5. Review NACL rules independently of Terraform to ensure strict boundary subnets
-aws ec2 describe-network-acls --filters "Name=tag:Environment,Values=dev"
-```
-
-#### Stage Environment
+The VPC is our private segment of the AWS Cloud. It isolates your infrastructure from the internet, providing a secure boundary for your application data.
 
 ```bash
-# Complete all items from Dev, plus:
+# 1. Navigate to the VPC module
+cd terraform/environments/dev/networking/vpc
 
-# 1. Populate all terragrunt.hcl files (see Critical Configuration Checks)
+# 2. Initialize Terragrunt
+#    Note: This creates the local .terragrunt-cache folder.
+terragrunt init
 
-# 2. Verify VPC CIDR doesn't overlap
-# Dev: 10.0.0.0/16
-# Stage: 10.1.0.0/16 ✓
-
-# 3. Review capacity settings
-cd environments/stage/compute/karpenter
-cat terragrunt.hcl | grep -A5 "karpenter_config"
-```
-
-#### Prod Environment
-
-```bash
-# Complete all items from Dev and Stage, plus:
-
-# 1. Populate all terragrunt.hcl files (9 files currently empty)
-
-# 2. Add missing karpenter_controller_role_arn
-
-# 3. Restrict public_access_cidrs
-
-# 4. Review and approve all security group rules
-
-# 5. Enable CloudTrail logging
-
-# 6. Set up CloudWatch alarms
-
-# 7. Test disaster recovery procedures
-
-# 8. Verify backup strategy (S3 versioning, snapshots)
-```
-
----
-
-## Pre-Launch Validation Script
-
-Run this script before any production deployment:
-
-```bash
-#!/bin/bash
-# pre-launch-check.sh
-
-set -e
-
-echo "=== Pre-Launch Validation ==="
-echo ""
-
-# Check 1: Empty terragrunt.hcl files
-echo "1. Checking for empty terragrunt.hcl files..."
-EMPTY_FILES=$(find environments/prod environments/stage -name "terragrunt.hcl" -empty)
-if [ -n "$EMPTY_FILES" ]; then
-  echo "   ❌ FAIL: Empty terragrunt.hcl files found:"
-  echo "$EMPTY_FILES" | sed 's/^/      /'
-  exit 1
-else
-  echo "   ✓ PASS: No empty terragrunt.hcl files"
-fi
-
-# Check 2: Prod Karpenter controller role
-echo ""
-echo "2. Checking prod Karpenter configuration..."
-if ! grep -q "karpenter_controller_role_arn" environments/prod/compute/karpenter/terragrunt.hcl; then
-  echo "   ❌ FAIL: Missing karpenter_controller_role_arn in prod"
-  exit 1
-else
-  echo "   ✓ PASS: Prod Karpenter controller role configured"
-fi
-
-# Check 3: S3 access type validation
-echo ""
-echo "3. Checking S3 access type validation..."
-if grep -q '"delete"' modules/security/iam/variables.tf | grep -q "condition"; then
-  echo "   ✓ PASS: S3 access type validation includes 'delete'"
-else
-  echo "   ⚠ WARNING: S3 access type validation may need update"
-fi
-
-# Check 4: Public access CIDRs in prod
-echo ""
-echo "4. Checking prod EKS public access CIDRs..."
-if grep -q '0\.0\.0\.0/0' environments/prod/compute/eks/terragrunt.hcl; then
-  echo "   ⚠ WARNING: Prod EKS allows access from 0.0.0.0/0"
-  echo "   Consider restricting to specific IPs"
-else
-  echo "   ✓ PASS: Prod EKS access is restricted"
-fi
-
-# Check 5: SSH open to internet
-echo ""
-echo "5. Checking NACL SSH rules..."
-if grep -q 'cidr_block = "0\.0\.0\.0/0"' environments/dev/networking/vpc/terragrunt.hcl; then
-  echo "   ⚠ WARNING: SSH open to 0.0.0.0/0 in dev NACL rules"
-else
-  echo "   ✓ PASS: SSH is restricted"
-fi
-
-echo ""
-echo "=== Validation Complete ==="
-echo ""
-echo "Review any WARNINGs above before proceeding with deployment."
-```
-
----
-## Known Issues and Fixes
-
-### NAT Gateway Availability Mode Error
-
-**Error:**
-
-```
-Error: creating EC2 NAT Gateway: operation error EC2: CreateNatGateway,
-api error MissingParameter: VpcId is not supported for a NAT gateway with availability mode zonal.
-```
-
-**Cause:** The AWS Terraform provider introduced a new `availability_mode` attribute for NAT gateways.
-
-**Resolution:**
-
-1. Open `terraform/modules/networking/vpc/main.tf`
-2. Locate the `aws_nat_gateway` resource
-3. Remove the `vpc_id` attribute (it's derived from `subnet_id`)
-4. Set `availability_mode = "zonal"` explicitly
-
-```hcl
-resource "aws_nat_gateway" "finishline_nat_gw" {
-  count = length(var.public_subnets_cidr)
-
-  subnet_id         = aws_subnet.finishline_public_subnet[count.index].id
-  allocation_id     = aws_eip.finishline_eip[count.index].id
-  availability_mode = "zonal"
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-nat-gw-${count.index + 1}"
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = var.managed_by
-  }
-}
-```
-
-### Terragrunt Module Path Issues
-
-**Error:**
-```
-error occurred: stat /home/ganil/Documents/finishline_infra_app/terraform/environments/modules: no such file or directory
-```
-
-**Cause:** The `source` path in `terragrunt.hcl` uses incorrect relative path depth.
-
-**Resolution:**
-```hcl
-# Incorrect (3 levels up):
-source = "${get_terragrunt_dir()}/../../../modules//networking/alb"
-
-# Correct (4 levels up):
-source = "${get_terragrunt_dir()}/../../../../modules//networking/alb"
-```
-
-### Missing Variable Errors
-**Error:**
-```
-var.alb_name
-  Name of the Application Load Balancer
-  Enter a value:
-```
-
-**Cause:** Required module variables are not defined in the `terragrunt.hcl` inputs block.
-
-**Resolution:**
-
-Add missing variables to the `inputs` block in `terragrunt.hcl`:
-
-```hcl
-inputs = {
-  alb_name              = "${local.project_name}-${local.environment}-alb"
-  alb_type              = "application"
-  security_group_id     = dependency.sg.outputs.security_group_id
-  # ... other inputs
-}
-```
-
-### Dependency Output Errors
-
-**Error:**
-
-```
-Error: Unknown variable
-  on terragrunt.hcl line XX:
-  XX:   cluster_name = dependency.eks.outputs.cluster_name
-There is no variable named "dependency".
-```
-
-**Cause:** Terragrunt cannot fetch outputs from dependencies that haven't been applied yet.
-
-**Resolution:**
-
-Apply dependencies in order:
-
-```bash
-# 1. Apply IAM first
-cd environments/dev/security/iam
-terragrunt apply
-
-# 2. Apply EKS
-cd environments/dev/compute/eks
-terragrunt apply
-
-# 3. Apply Karpenter
-cd environments/dev/compute/karpenter
+# 3. Apply the VPC Configuration
 terragrunt apply
 ```
 
-### Helm Provider set Block Syntax Error
+> [!IMPORTANT]
+> **DevSecOps Masterclass: Regional Resilience (3-AZs)**
+> **Concept:** Why 3 AZs instead of 2?
+> **The Why:** A 2-AZ setup is "High Availability," but a 3-AZ setup is **Resilient**. If one AWS Data Center goes offline (AZ-a), your cluster still maintains **Quorum** (AZ-b and AZ-c). This ensures the EKS control plane and your application remain operational without split-brain scenarios.
 
-**Error:**
+**Dev VPC Subnet Architecture:**
+| Subnet Type | Availability Zone | CIDR Block | IP Count | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| **Public A** | us-east-1a | `10.0.1.0/24` | 251 | ALB listeners, IGW ingress |
+| **Public B** | us-east-1b | `10.0.2.0/24` | 251 | High Availability peer for ALB |
+| **Public C** | us-east-1c | `10.0.3.0/24` | 251 | High Availability peer for ALB |
+| **Private A** | us-east-1a | `10.0.10.0/24` | 251 | EKS Managed Worker Nodes |
+| **Private B** | us-east-1b | `10.0.11.0/24` | 251 | High Availability for workloads |
+| **Private C** | us-east-1c | `10.0.12.0/24` | 251 | High Availability for workloads |
 
-```
-Error: Unsupported block type
-  on main.tf line 18, in resource "helm_release" "karpenter":
-  18:   set {
-Blocks of type "set" are not expected here. Did you mean to define argument
-"set"? If so, use the equals sign to assign it a value.
-```
+**VPC Configuration:**
 
-**Cause:** Helm provider v3.0+ changed `set` from a block type to an argument using `=` assignment. The old block syntax (`set { name = "...", value = "..." }`) is no longer supported.
+| Configuration           | Value                              | Description                      |
+| :---------------------- | :--------------------------------- | :------------------------------- |
+| **VPC Name**            | `finishline-infra-app-dev-vpc`     | Unique VPC identifier            |
+| **VPC CIDR**            | `10.0.0.0/16`                      | 65,536 IP addresses available    |
+| **DNS Support**         | Enabled                            | Required for DNS resolution      |
+| **DNS Hostnames**       | Enabled                            | Required for ALB and private DNS |
+| **Availability Zones**  | us-east-1a, us-east-1b, us-east-1c | 3-AZ deployment                  |
+| **NAT Gateway**         | 1 (Single)                         | Cost-optimized for dev           |
+| **Internet Gateway**    | 1                                  | Public internet access           |
+| **VPC Endpoints**       | EKS, STS, EC2, S3                  | Private AWS service access       |
+| **Karpenter Discovery** | Enabled                            | Subnets tagged for Karpenter     |
 
-**Resolution:**
+**Route Table Configuration:**
 
-Convert `set` blocks to the new `set` argument syntax in `terraform/modules/compute/karpenter/main.tf`:
+| Route Table    | Destination   | Target           | Subnets                   |
+| :------------- | :------------ | :--------------- | :------------------------ |
+| **Public RT**  | `10.0.0.0/16` | Local            | All VPC subnets           |
+| **Public RT**  | `0.0.0.0/0`   | Internet Gateway | Public subnets (A, B, C)  |
+| **Private RT** | `10.0.0.0/16` | Local            | All VPC subnets           |
+| **Private RT** | `0.0.0.0/0`   | NAT Gateway      | Private subnets (A, B, C) |
 
-```hcl
-# Old (Helm provider v2.x) - INVALID:
-set {
-  name  = "settings.clusterName"
-  value = var.cluster_name
-}
+**VPC Endpoints Created:**
 
-dynamic "set" {
-  for_each = var.queue_name != "" ? [1] : []
-  content {
-    name  = "settings.interruptionQueue"
-    value = var.queue_name
-  }
-}
+| Endpoint | Service                       | Type      | Purpose                       |
+| :------- | :---------------------------- | :-------- | :---------------------------- |
+| **EKS**  | `com.amazonaws.us-east-1.eks` | Interface | Private EKS API access        |
+| **STS**  | `com.amazonaws.us-east-1.sts` | Interface | IAM token exchange            |
+| **EC2**  | `com.amazonaws.us-east-1.ec2` | Interface | Private EC2 API access        |
+| **S3**   | `com.amazonaws.us-east-1.s3`  | Gateway   | Private S3 access (ECR pulls) |
 
-# New (Helm provider v3.0+) - CORRECT:
-set = [
-  {
-    name  = "settings.clusterName"
-    value = var.cluster_name
-  },
-  {
-    name  = "settings.clusterEndpoint"
-    value = var.cluster_endpoint
-  },
-  {
-    name  = "replicas"
-    value = "1"
-  }
-]
+**VPC Features:**
 
-# For conditional values, use a conditional expression:
-set_sensitive = var.karpenter_interruption_queue_name != "" ? [
-  {
-    name  = "settings.interruptionQueue"
-    value = var.karpenter_interruption_queue_name
-  }
-] : []
-```
+- **NAT Gateway:** Single NAT gateway in public subnet A for cost optimization in dev
+- **VPC Endpoints:** Private connectivity to AWS services without internet egress
+- **Karpenter Discovery:** All subnets tagged with `karpenter.sh/discovery=finishline-infra-app-dev-eks`
+- **DNS Resolution:** Full DNS support for service discovery within VPC
 
-After fixing, run:
+**Verify VPC Deployment:**
 
 ```bash
-cd environments/dev/compute/karpenter
-terragrunt init -upgrade
-terragrunt validate
-terragrunt plan
+# 1. Get VPC details
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=finishline-infra-app-dev-vpc" \
+  --query "Vpcs[0].{VpcId: VpcId, CidrBlock: CidrBlock, State: State, InstanceTenancy: InstanceTenancy}"
+
+# 2. List all subnets
+aws ec2 describe-subnets --filters "Name=tag:Name,Values=finishline-infra-app-dev-*" \
+  --query "Subnets[*].{SubnetId: SubnetId, CidrBlock: CidrBlock, AZ: AvailabilityZone, Type: Tags[?Key=='Type'].Value|[0]}"
+
+# 3. Check Internet Gateway
+aws ec2 describe-internet-gateways --filters "Name=tag:Name,Values=finishline-infra-app-dev-igw" \
+  --query "InternetGateways[0].{IgwId: InternetGatewayId, VpcId: Attachments[0].VpcId, State: Attachments[0].State}"
+
+# 4. Check NAT Gateway
+aws ec2 describe-nat-gateways --filter "Name=tag:Name,Values=finishline-infra-app-dev-nat-gw" \
+  --query "NatGateways[0].{NatGwId: NatGatewayId, State: State, SubnetId: SubnetId}"
+
+# 5. List VPC Endpoints
+aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=finishline-infra-app-dev-vpc' --query 'Vpcs[0].VpcId' --output text)" \
+  --query "VpcEndpoints[*].{ServiceName: ServiceName, VpcEndpointType: VpcEndpointType, State: State}"
+
+# 6. Check route tables
+aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=finishline-infra-app-dev-vpc' --query 'Vpcs[0].VpcId' --output text)" \
+  --query "RouteTables[*].{RouteTableId: RouteTableId, Associations: Associations[*].SubnetId, Routes: Routes[*].{Destination: DestinationCidrBlock, Target: GatewayId || NatGatewayId}}"
+
+# 7. Verify Karpenter subnet tags
+aws ec2 describe-subnets --filters "Name=tag:karpenter.sh/discovery,Values=finishline-infra-app-dev-eks" \
+  --query "Subnets[*].{SubnetId: SubnetId, CidrBlock: CidrBlock, AZ: AvailabilityZone}"
 ```
 
-### Karpenter CRD Recognition Error
+#### 1.2 Network ACLs (NACLs): Master the Stateless Layer
 
-**Error:**
+While Security Groups are "Stateful" (they remember traffic), Network ACLs are **Stateless**. They act as a hard outer shell for each subnet, evaluating every single packet from scratch.
 
-```
-Error: API did not recognize GroupVersionKind from manifest (CRD may not be installed)
-│
-│   with kubernetes_manifest.karpenter_ec2_node_class,
-│   on main.tf line 51, in resource "kubernetes_manifest" "karpenter_ec2_node_class":
-│   51: resource "kubernetes_manifest" "karpenter_ec2_node_class" {
-│
-│ no matches for kind "EC2NodeClass" in group "karpenter.k8s.aws"
-```
+> [!IMPORTANT]
+> **DevSecOps Angle: Defense in Depth**
+> We use NACLs to block broad, high-risk traffic before it even reaches a Security Group. This "layered" approach (NACL -> SG -> Pod) ensures that a configuration error at one level doesn't leave the whole cluster exposed.
 
-**Cause:** Terraform's `kubernetes_manifest` resource validates schemas at **plan time**, not just at apply time. Even with proper `depends_on` configurations, Terraform queries the API server for schema validation during `terraform plan`, which fails if CRDs aren't already registered.
+**NACL Rules Explained:**
 
-**Resolution (REMEDIATION 010 - Final Fix):**
+| Rule #  | Protocol | Port(s)      | Action | CIDR Block  | Purpose                          | Direction |
+| :------ | :------- | :----------- | :----- | :---------- | :------------------------------- | :-------- |
+| **100** | TCP      | `80`         | ALLOW  | `0.0.0.0/0` | Standard HTTP Web Traffic        | Inbound   |
+| **110** | TCP      | `443`        | ALLOW  | `0.0.0.0/0` | Secure HTTPS Web Traffic         | Inbound   |
+| **120** | TCP      | `22`         | ALLOW  | `0.0.0.0/0` | SSH Access (restricted via SG)   | Inbound   |
+| **130** | TCP      | `1024-65535` | ALLOW  | `0.0.0.0/0` | Ephemeral ports (return traffic) | Inbound   |
+| **100** | TCP      | `80`         | ALLOW  | `0.0.0.0/0` | Outbound HTTP                    | Outbound  |
+| **110** | TCP      | `443`        | ALLOW  | `0.0.0.0/0` | Outbound HTTPS                   | Outbound  |
+| **120** | TCP      | `1024-65535` | ALLOW  | `0.0.0.0/0` | Ephemeral ports (outbound)       | Outbound  |
+| **\***  | All      | All          | DENY   | `0.0.0.0/0` | Default deny (implicit)          | Both      |
 
-The module has been updated to use `kubectl_manifest` instead of `kubernetes_manifest`. This approach defers schema validation to apply time, avoiding plan-time CRD validation errors.
+**NACL vs Security Group:**
 
-**Key Changes Applied:**
+| Feature         | Network ACL                                           | Security Group                                     |
+| :-------------- | :---------------------------------------------------- | :------------------------------------------------- |
+| **Operates at** | Subnet level                                          | Instance/ENI level                                 |
+| **State**       | Stateless (return traffic must be explicitly allowed) | Stateful (return traffic is automatically allowed) |
+| **Rules**       | Separate inbound and outbound rules                   | Separate inbound and outbound rules                |
+| **Evaluation**  | Rules evaluated in numerical order                    | All rules evaluated before allowing traffic        |
+| **Default**     | Default NACL allows all traffic                       | Default SG denies all inbound traffic              |
 
-1. **Use `kubectl_manifest` for CRDs** - Installs EC2NodeClass, NodePool, and NodeClaim CRDs without plan-time validation
-2. **Use `kubectl_manifest` for Karpenter Resources** - EC2NodeClass and NodePool resources use `kubectl_manifest`
-3. **Helm with `skip_crds = true`** - Helm chart installs only the controller, CRDs are managed separately
-4. **60-second time buffer** - `time_sleep` ensures controller is ready before applying resources
-5. **`create_namespace = true`** - Helm creates the karpenter namespace automatically
-
-**Updated Resource Dependency Chain:**
-
-```
-kubectl_manifest.karpenter_crds (EC2NodeClass CRD)
-    └── kubectl_manifest.karpenter_crds_nodepool (NodePool CRD)
-        └── kubectl_manifest.karpenter_crds_nodeclaim (NodeClaim CRD)
-            └── helm_release.karpenter (Controller)
-                └── time_sleep.wait_for_karpenter_crds (60s buffer)
-                    └── kubectl_manifest.karpenter_ec2_node_class
-                        └── kubectl_manifest.karpenter_node_pool
-```
-
-**Required Providers:**
-
-```hcl
-# In root.hcl:
-required_providers {
-  kubectl = {
-    source  = "gavinbunney/kubectl"
-    version = ">= 1.14"
-  }
-  time = {
-    source  = "hashicorp/time"
-    version = "~> 0.9"
-  }
-}
-```
-
-**If you encounter this error on older configurations:**
+**Verify NACL Configuration:**
 
 ```bash
-# 1. Navigate to Karpenter module
-cd environments/dev/compute/karpenter
-
-# 2. Update to latest code
-git pull origin main
-
-# 3. Re-initialize to download kubectl provider
-terragrunt init -upgrade
-
-# 4. Plan and apply
-terragrunt plan -out=tfplan
-terragrunt apply tfplan
+# List NACLs for the VPC
+aws ec2 describe-network-acls --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=finishline-infra-app-dev-vpc' --query 'Vpcs[0].VpcId' --output text)" \
+  --query "NetworkAcls[*].{NetworkAclId: NetworkAclId, Subnets: Associations[*].SubnetId, InboundRules: Entries[?Egress==\`false\`], OutboundRules: Entries[?Egress==\`true\`]}"
 ```
-
-**Verify CRDs are installed:**
-
-```bash
-# Check Karpenter CRDs exist
-kubectl get crds | grep karpenter
-
-# Expected output:
-# ec2nodeclasses.karpenter.k8s.aws          2024-01-01T00:00:00Z
-# nodeclaims.karpenter.k8s.aws              2024-01-01T00:00:00Z
-# nodepools.karpenter.sh                    2024-01-01T00:00:00Z
-
-# Check Karpenter controller is running
-kubectl get pods -n karpenter
-
-# Expected:
-# NAME                         READY   STATUS    RESTARTS   AGE
-# karpenter-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
-
-# Verify EC2NodeClass and NodePool
-kubectl get ec2nodeclass default
-kubectl get nodepool default
-
-# Expected:
-# NAME      ZONES        USAGELIMITED   READY   AGE
-# default   us-east-1a   true           True    2m
-
-# NAME    TYPE        NODECLASS   MIN   MAX   WEIGHT   READY   AGE
-# default   provision   default     -     -     100      True    2m
-```
-
-**Why kubectl_manifest?**
-
-| Feature                 | `kubernetes_manifest`     | `kubectl_manifest`       |
-| ----------------------- | ------------------------- | ------------------------ |
-| Plan-time validation    | ✅ Yes (causes CRD errors) | ❌ No (deferred to apply) |
-| Schema validation       | Strict                    | Flexible                 |
-| CRD dependency handling | Complex                   | Simple                   |
-| Recommended for CRDs    | ❌ No                      | ✅ Yes                    |
 
 ---
 
-## Part 1: Networking Deployment
+#### 1.3 Deploy Security Groups
 
-### Step 1: Bootstrap State Backend
+**What is a Security Group?**
 
-**Purpose:** Create S3 bucket for Terraform state storage.
+A Security Group (SG) is a **stateful virtual firewall** that controls inbound and outbound traffic for AWS resources at the network interface level. Unlike NACLs (which are stateless and operate at the subnet level), Security Groups:
+
+- **Track Connection State:** If you allow inbound traffic on port 443, the response is automatically allowed outbound—no need for a return rule.
+- **Are Instance-Specific:** Each EC2 instance, ENI (Elastic Network Interface), or EKS node can have its own SG assignment.
+- **Default Deny All:** By default, all inbound traffic is blocked. You must explicitly allow every port/protocol combination.
+- **Support Referencing:** Security Groups can reference other Security Groups as sources, enabling secure internal communication without hardcoding IPs.
+
+> [!IMPORTANT]
+> **DevSecOps Angle: The Principle of Least Privilege**
+> Security Groups enforce the "Principle of Least Privilege" at the network layer. Only the minimum required ports are opened, and only from trusted sources. This reduces the "blast radius" if a single component is compromised.
+
+**Security Group Inventory:**
+
+| Group Name      | Protocol | Port(s)   | Source                                  | Purpose                                                            |
+| :-------------- | :------- | :-------- | :-------------------------------------- | :----------------------------------------------------------------- |
+| **EKS Cluster** | TCP      | `443`     | VPC CIDR                                | Control Plane communication. Allows kubelets to talk to API server |
+| **ALB Shared**  | TCP      | `80, 443` | `0.0.0.0/0`                             | Public Internet ingress. HTTP redirects to HTTPS in production     |
+| **Jumphost**    | TCP      | `22`      | Authorized IP (e.g., `203.0.113.50/32`) | Strictly restricted SSH access for admin operations                |
+| **MySQL**       | TCP      | `3306`    | VPC CIDR                                | Database access from within VPC only                               |
+| **EKS Kubelet** | TCP      | `10250`   | VPC CIDR                                | Internal EKS node communication                                    |
+
+**Security Group Details:**
+
+| Security Group        | Inbound Rules                                                                                                     | Outbound Rules           | Attached To              |
+| :-------------------- | :---------------------------------------------------------------------------------------------------------------- | :----------------------- | :----------------------- |
+| **finishline-dev-sg** | SSH (22) from executor IP, HTTP (80), HTTPS (443) from 0.0.0.0/0, MySQL (3306) from VPC, Kubelet (10250) from VPC | All traffic to 0.0.0.0/0 | ALB, Jumphost, EKS nodes |
+| **EKS Cluster SG**    | HTTPS (443) from VPC CIDR                                                                                         | All traffic to 0.0.0.0/0 | EKS Control Plane        |
 
 ```bash
-# Navigate to bootstrap directory
-cd terraform/environments/dev/bootstrap
+# Navigate to the SG module
+cd ../sg
+terragrunt apply
+```
 
-# Review configuration
-cat terragrunt.hcl
+**Verify Security Groups:**
 
-# Deploy bootstrap
+```bash
+# 1. List all security groups for the VPC
+aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=finishline-infra-app-dev-vpc' --query 'Vpcs[0].VpcId' --output text)" \
+  --query "SecurityGroups[*].{GroupId: GroupId, GroupName: GroupName, Description: Description, InboundRules: IpPermissions[*].{FromPort: FromPort, ToPort: ToPort, Protocol: IpProtocol, CidrBlocks: IpRanges[*].CidrIp}, OutboundRules: IpPermissionsEgress[*].{FromPort: FromPort, ToPort: ToPort, Protocol: IpProtocol}}"
+
+# 2. Get specific security group details
+aws ec2 describe-security-groups --filters "Name=group-name,Values=finishline-dev-sg" \
+  --query "SecurityGroups[0].{GroupId: GroupId, Inbound: IpPermissions, Outbound: IpPermissionsEgress}"
+
+# 3. Check security group references
+aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=finishline-infra-app-dev-vpc' --query 'Vpcs[0].VpcId' --output text)" \
+  --query "SecurityGroups[*].{GroupName: GroupName, ReferencedByVpc: VpcPeeringConnectionId}"
+```
+
+---
+
+#### 1.4 Deploy the Shared ALB
+
+**What is an Application Load Balancer (ALB)?**
+
+An Application Load Balancer (ALB) is a **Layer 7 (Application Layer) load balancer** that distributes incoming traffic across multiple targets (EC2 instances, IP addresses, or Kubernetes Pods) in one or more Availability Zones. The ALB is the "Front Door" of your application.
+
+**Key ALB Capabilities:**
+
+| Feature                   | Description                                                                   |
+| :------------------------ | :---------------------------------------------------------------------------- |
+| **Content-Based Routing** | Route traffic based on URL path (`/api/*` → API service, `/static/*` → S3).   |
+| **Host-Based Routing**    | Route traffic based on hostname (`api.example.com` vs `www.example.com`).     |
+| **SSL/TLS Termination**   | Decrypt HTTPS traffic at the ALB, reducing CPU load on backend servers.       |
+| **Health Checks**         | Continuously monitor target health and route traffic only to healthy targets. |
+| **Sticky Sessions**       | Route requests from the same client to the same target (session affinity).    |
+| **WebSocket Support**     | Maintain persistent connections for real-time applications.                   |
+
+> [!IMPORTANT]
+> **DevSecOps Angle: Single Point of Entry**
+> By funneling all external traffic through the ALB, you create a **chokepoint** for security enforcement. This allows you to:
+>
+> - Attach WAF (Web Application Firewall) rules to block SQL injection, XSS, and bot traffic.
+> - Centralize SSL/TLS certificate management via ACM.
+> - Capture access logs for every HTTP request for audit purposes.
+> - Hide backend infrastructure details (IPs, ports, topology) from the public internet.
+
+**ALB Configuration (Dev):**
+
+| Configuration                 | Value                                                  | Description                        |
+| :---------------------------- | :----------------------------------------------------- | :--------------------------------- |
+| **Name**                      | `finishline-infra-app-dev-alb`                         | Unique ALB identifier              |
+| **Type**                      | `application`                                          | Layer 7 load balancer              |
+| **Scheme**                    | Internet-facing (`internal = false`)                   | Publicly accessible                |
+| **Subnets**                   | Public A, B, C (10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24) | Multi-AZ deployment                |
+| **Security Groups**           | finishline-dev-sg                                      | Controls inbound/outbound traffic  |
+| **HTTP/2**                    | Enabled                                                | Modern protocol support            |
+| **Cross-Zone Load Balancing** | Enabled                                                | Distributes traffic across all AZs |
+| **Deletion Protection**       | Disabled (Dev)                                         | Enabled in production              |
+| **Target Group Port**         | 80                                                     | HTTP traffic                       |
+| **Target Group Protocol**     | HTTP                                                   | Unencrypted to targets             |
+| **Target Type**               | `instance`                                             | EC2 instances as targets           |
+| **Health Check Path**         | `/health`                                              | Application health endpoint        |
+| **Health Check Matcher**      | `200`                                                  | Expected HTTP status code          |
+| **Health Check Interval**     | 5 seconds                                              | Frequency of health checks         |
+| **Health Check Timeout**      | 4 seconds                                              | Time to wait for response          |
+| **Healthy Threshold**         | 3                                                      | Consecutive successes required     |
+| **Unhealthy Threshold**       | 3                                                      | Consecutive failures required      |
+| **Stickiness Type**           | `lb_cookie`                                            | Load balancer-generated cookie     |
+| **Stickiness Duration**       | 86400 seconds (24 hours)                               | Cookie expiration                  |
+| **Listener Port**             | 80                                                     | HTTP listener                      |
+| **Listener Protocol**         | HTTP                                                   | Unencrypted listener               |
+| **Default Action**            | `forward`                                              | Forward to target group            |
+
+**ALB Resources Created:**
+| Resource | Name Pattern | Purpose |
+| :--- | :--- | :--- |
+| **Load Balancer** | `finishline-infra-app-dev-alb` | Main ALB instance |
+| **Target Group** | `finishline-infra-app-dev-alb-tg` | Group of registered targets |
+| **Listener** | Port 80 HTTP | Accepts incoming connections |
+
+**Deploy ALB - Current Configuration:**
+
+> [!NOTE]
+> **Current Project Status:** The ALB module is currently only configured for the **dev environment** via the `composition/dev` monolithic module. Stage and Prod ALB configurations are placeholders (empty `terragrunt.hcl` files) and need to be implemented.
+
+```bash
+# ============================================
+# For DEV Environment (Currently Active)
+# ============================================
+# ALB is deployed as part of the composition/dev module
+# All dev resources are deployed together
+cd terraform/environments/dev
 terragrunt init
 terragrunt apply
 
-# Expected output:
-# Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
-# S3 bucket: finishline-infra-app-ba3347ce
+# This single command deploys:
+# - VPC, Subnets, NAT Gateway, VPC Endpoints
+# - Security Groups
+# - ALB (Application Load Balancer)
+# - IAM Roles & Key Pair
+# - EKS Cluster & Node Group
+# - Karpenter Autoscaler
+# - Jumphost
 ```
 
-**Verify:**
+**Module Dependency Order:**
+
+The ALB module (when configured) depends on:
+
+1. **VPC Module** - Provides VPC ID and subnet IDs
+2. **Security Groups Module** - Provides security group ID for ALB
+
+**Future Stage/Prod Deployment (When Configured):**
 
 ```bash
-# Check S3 bucket exists
-aws s3 ls s3://finishline-infra-app-ba3347ce
-
-# Check versioning is enabled
-aws s3api get-bucket-versioning --bucket finishline-infra-app-ba3347ce
-```
-
----
-
-### Step 2: Deploy VPC
-
-**Purpose:** Create VPC, subnets, Internet Gateway, and route tables.
-
-```bash
-# Navigate to VPC module
-cd ../networking/vpc
-
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-```
-
-**Configuration Summary:**
-
-| Setting            | Value                                    |
-| ------------------ | ---------------------------------------- |
-| VPC CIDR           | 10.0.0.0/16                              |
-| Public Subnets     | 10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24    |
-| Private Subnets    | 10.0.10.0/24, 10.0.11.0/24, 10.0.12.0/24 |
-| Availability Zones | us-east-1a, us-east-1b, us-east-1c       |
-| DNS Support        | Enabled                                  |
-| DNS Hostnames      | Enabled                                  |
-
-**Verify:**
-
-```bash
-# Check VPC
-aws ec2 describe-vpcs --filters "Name=tag:Name,Values=finishline-infra-app-dev-vpc"
-
-# Check subnets
-aws ec2 describe-subnets --filters "Name=vpc-id,Values=vpc-xxx"
-
-# Check Internet Gateway
-aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=vpc-xxx"
-
-# Check route tables
-aws ec2 describe-route-tables --filters "Name=vpc-id,Values=vpc-xxx"
-```
-
----
-
-### Step 3: Deploy Security Groups
-
-**Purpose:** Create security groups for ALB, EKS, and application traffic.
-
-```bash
-# Navigate to Security Group module
-cd ../sg
-
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-```
-
-**Security Group Rules:**
-
-| Security Group    | Ingress                                                  | Egress          |
-| ----------------- | -------------------------------------------------------- | --------------- |
-| **finishline-sg** | 80, 443 (0.0.0.0/0), 22 (10.0.0.0/16), 30000-32768 (EKS) | All (0.0.0.0/0) |
-
-**Verify:**
-
-```bash
-# List security groups
-aws ec2 describe-security-groups --filters "Name=tag:Name,Values=finishline-infra-app-dev-sg"
-
-# Check ingress rules
-aws ec2 describe-security-groups \
-  --filters "Name=group-name,Values=finishline-infra-app-dev-sg" \
-  --query 'SecurityGroups[0].IpPermissions'
-```
-
----
-
-### Step 4: Deploy ALB
-
-**Purpose:** Create Application Load Balancer with Target Group and Listener.
-
-```bash
-# Navigate to ALB module
-cd ../alb
-
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-```
-
-**ALB Configuration:**
-
-| Setting        | Value                         |
-| -------------- | ----------------------------- |
-| Type           | Application (Internet-facing) |
-| Subnets        | Public subnets from VPC       |
-| Security Group | Dedicated ALB SG              |
-| Listener       | HTTP (Port 80)                |
-| Target Group   | Port 80, HTTP protocol        |
-| Health Check   | /, 30s interval               |
-
-**Verify:**
-
-```bash
-# Check ALB
-aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, 'finishline')]"
-
-# Check Target Group
-aws elbv2 describe-target-groups --query "TargetGroups[?contains(TargetGroupName, 'finishline')]"
-
-# Check Listener
-aws elbv2 describe-listeners --load-balancer-arn <alb-arn>
-
-# Get ALB DNS name
-aws elbv2 describe-load-balancers \
-  --query "LoadBalancers[0].DNSName" \
-  --output text
-```
-
----
-
-### Step 5: Verify Networking
-
-```bash
-# Create verification script
-cat > /tmp/verify-networking.sh << 'EOF'
-#!/bin/bash
-
-echo "=== Networking Verification ==="
-echo ""
-
-# VPC Check
-echo "1. VPC Status:"
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=finishline-infra-app-dev-vpc" --query "Vpcs[0].VpcId" --output text)
-echo "   VPC ID: $VPC_ID"
-
-# Subnet Check
-echo ""
-echo "2. Subnet Status:"
-aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
-  --query "Subnets[*].[AvailabilityZone,CidrBlock,State]" --output table
-
-# ALB Check
-echo ""
-echo "3. ALB Status:"
-ALB_DNS=$(aws elbv2 describe-load-balancers --query "LoadBalancers[0].DNSName" --output text)
-echo "   ALB DNS: $ALB_DNS"
-
-# Connectivity Test
-echo ""
-echo "4. Connectivity Test:"
-curl -s -o /dev/null -w "   HTTP Response: %{http_code}\n" http://$ALB_DNS/ || echo "   (Expected: 403/503 - no targets)"
-
-echo ""
-echo "=== Verification Complete ==="
-EOF
-
-chmod +x /tmp/verify-networking.sh
-/tmp/verify-networking.sh
-```
-
----
-
-## Part 2: Security Module Deployment
-
-### Step 1: Deploy Key Pair
-
-**Purpose:** Create SSH key pair for jumphost access.
-
-```bash
-# Navigate to Key Pair module
-cd ../../security/key_pair
-
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-```
-
-**Outputs:**
-
-```
-key_name = finishline-infra-app-dev-key
-private_key_path = /path/to/finishline-infra-app-dev-key.pem
-```
-
-**Verify:**
-
-```bash
-# List key pairs
-aws ec2 describe-key-pairs --filters "Name=key-name,Values=finishline*"
-
-# Set correct permissions on private key
-chmod 400 /path/to/finishline-infra-app-dev-key.pem
-```
-
----
-
-### Step 2: Deploy IAM Roles
-
-**Purpose:** Create IAM roles for EKS cluster, worker nodes, OIDC integration, and Karpenter autoscaler.
-
-```bash
-# Navigate to IAM module
-cd ../iam
-
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-```
-
-**IAM Roles Created:**
-
-| Role                                  | Purpose              | Trust Entity      |
-| ------------------------------------- | -------------------- | ----------------- |
-| `finishline-dev-cluster-role`         | EKS Cluster          | eks.amazonaws.com |
-| `finishline-dev-nodegroup-role`       | EKS Worker Nodes     | ec2.amazonaws.com |
-| `finishline-dev-oidc-role`            | Generic Workloads    | OIDC (IRSA)       |
-| `finishline-dev-karpenter-controller` | Karpenter Controller | OIDC (IRSA)       |
-| `finishline-dev-karpenter-node`       | Karpenter Nodes      | ec2.amazonaws.com |
-
-**Verify:**
-
-```bash
-# List IAM roles
-aws iam list-roles --query "Roles[?contains(RoleName, 'finishline')].[RoleName,Arn]" --output table
-
-# Check trust policies
-aws iam get-role --role-name finishline-dev-cluster-role --query "Role.AssumeRolePolicyDocument"
-
-# Get Karpenter outputs (needed later)
-terragrunt output karpenter_controller_role_arn
-terragrunt output karpenter_node_instance_profile_name
-```
-
----
-
-### Step 3: Configure OIDC for IRSA
-
-**Purpose:** Enable IAM Roles for Service Accounts (IRSA) for Karpenter and workloads.
-
-#### 3.1 Get OIDC URL from EKS Cluster
-
-**Note:** This must be done AFTER EKS cluster is created (Part 3, Step 1).
-
-```bash
-# After EKS cluster is created, get OIDC issuer URL
-aws eks describe-cluster \
-  --name finishline-infra-app-dev-eks \
-  --query "cluster.identity.oidc.issuer" \
-  --output text
-
-# Expected output: https://oidc.eks.us-east-1.amazonaws.com/id/XXXXXXXXXXXXX
-```
-
-#### 3.2 Get OIDC Thumbprint
-
-```bash
-# Get the thumbprint for the OIDC provider
-openssl s_client -showcerts -connect oidc.eks.us-east-1.amazonaws.com:443 \
-  | openssl x509 -fingerprint -sha256 -noout \
-  | cut -d= -f2 \
-  | tr -d ':'
-
-# Expected output: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (64 characters)
-```
-
-#### 3.3 Update IAM Terragrunt Configuration
-
-```bash
-# Edit terragrunt.hcl with OIDC values
-cd ../../security/iam
-vi terragrunt.hcl
-
-# Update the following variables:
-# eks_oidc_url        = "https://oidc.eks.us-east-1.amazonaws.com/id/XXXXXXXXXXXXX"
-# oidc_thumbprint     = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-# eks_oidc_namespace  = "karpenter"
-# eks_oidc_service_account = "karpenter"
-# eks_oidc_subject    = "system:serviceaccount:karpenter:karpenter"
-```
-
-#### 3.4 Re-apply IAM Module
-
-```bash
-# Apply OIDC configuration
+# ============================================
+# For STAGE Environment (Placeholder - Not Configured)
+# ============================================
+# Note: terragrunt.hcl files exist but are empty (0 bytes)
+# Need to configure before deployment
+cd terraform/environments/stage/networking/alb
+# TODO: Configure terragrunt.hcl with:
+#   - VPC dependency
+#   - Security Group dependency
+#   - ALB input variables
+terragrunt init
+terragrunt apply
+
+# ============================================
+# For PROD Environment (Placeholder - Not Configured)
+# ============================================
+# Note: terragrunt.hcl files exist but are empty (0 bytes)
+# Need to configure before deployment
+cd terraform/environments/prod/networking/alb
+# TODO: Configure terragrunt.hcl with:
+#   - VPC dependency
+#   - Security Group dependency
+#   - ALB input variables (production-hardened)
+terragrunt init
 terragrunt apply
 ```
 
-#### 3.5 Verify OIDC Provider
+**Recommended Deployment Order (When Stage/Prod Configured):**
 
 ```bash
+# Deploy entire environment with dependency ordering
+cd terraform/environments/stage
+terragrunt run-all apply  # Deploys: vpc -> sg -> alb -> ...
+
+cd terraform/environments/prod
+terragrunt run-all apply  # Deploys: vpc -> sg -> alb -> ...
+```
+
+**Verify ALB Deployment:**
+
+```bash
+# 1. Get ALB DNS Name
+ALB_DNS=$(aws elbv2 describe-load-balancers \
+    --names finishline-infra-app-dev-alb \
+    --query "LoadBalancers[0].DNSName" \
+    --output text)
+echo "ALB DNS: $ALB_DNS"
+
+# 2. Get ALB details (scheme, type, subnets)
+aws elbv2 describe-load-balancers \
+    --names finishline-infra-app-dev-alb \
+    --query "LoadBalancers[0].{
+        DNSName: DNSName,
+        Scheme: Scheme,
+        Type: Type,
+        VpcId: VpcId,
+        Subnets: AvailabilityZards,
+        SecurityGroups: SecurityGroups,
+        CanonicalHostedZoneId: CanonicalHostedZoneId
+    }"
+
+# 3. Get Target Group details
+TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
+    --query "TargetGroups[?contains(TargetGroupName, 'finishline-infra-app-dev-alb-tg')].TargetGroupArn" \
+    --output text)
+
+aws elbv2 describe-target-groups \
+    --target-group-arns $TARGET_GROUP_ARN \
+    --query "TargetGroups[0].{
+        Name: TargetGroupName,
+        Port: Port,
+        Protocol: Protocol,
+        VpcId: VpcId,
+        HealthCheckPath: HealthCheckPath,
+        HealthCheckInterval: HealthCheckIntervalSeconds,
+        HealthyThreshold: HealthyThresholdCount,
+        UnhealthyThreshold: UnhealthyThresholdCount
+    }"
+
+# 4. Check Target Health
+aws elbv2 describe-target-health --target-group-arn $TARGET_GROUP_ARN
+
+# 5. Get Listener configuration
+LISTENER_ARN=$(aws elbv2 describe-listeners \
+    --load-balancer-arn $(aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb --query "LoadBalancers[0].Arn" --output text) \
+    --query "Listeners[0].Arn" --output text)
+
+aws elbv2 describe-listeners --listener-arns $LISTENER_ARN
+
+# 6. Test HTTP Connectivity
+curl -I http://$ALB_DNS
+
+# 7. Test with verbose output for troubleshooting
+curl -v http://$ALB_DNS/health
+
+# 8. Check ALB tags
+aws elbv2 describe-tags \
+    --resource-arns $(aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb --query "LoadBalancers[0].Arn" --output text)
+```
+
+**ALB Access Logs (Optional):**
+
+```bash
+# Enable access logs to S3 bucket
+aws elbv2 modify-load-balancer-attributes \
+    --load-balancer-arn <ALB_ARN> \
+    --attributes Key=access_logs.s3.enabled,Value=true Key=access_logs.s3.bucket,Value=<BUCKET_NAME> Key=access_logs.s3.prefix,Value=alb-logs
+```
+
+**ALB Security Group Rules Required:**
+| Direction | Protocol | Port | Source/Destination | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| Inbound | TCP | 80 | 0.0.0.0/0 | HTTP traffic from internet |
+| Inbound | TCP | 443 | 0.0.0.0/0 | HTTPS traffic from internet |
+| Outbound | TCP | 80 | VPC CIDR | Health checks to targets |
+| Outbound | TCP | 443 | VPC CIDR | HTTPS to targets |
+| Outbound | TCP | 1024-65535 | 0.0.0.0/0 | Ephemeral return traffic |
+
+---
+
+### Step 2: Identity & Access (IAM, OIDC)
+
+**Goal:** Secure the identity of the cluster and its users.
+
+#### 2.1 Generate the SSH Key Pair
+
+Create the private/public key used for Jumphost access.
+
+```bash
+cd ../../security/key_pair
+terragrunt apply
+```
+
+**Key Pair Configuration:**
+| Configuration | Value | Description |
+| :--- | :--- | :--- |
+| **Key Name** | `finishline-dev-key` | Unique key identifier |
+| **Algorithm** | RSA | Asymmetric encryption |
+| **Key Length** | 4096 bits | High-security key size |
+| **Output Format** | PEM | Privacy Enhanced Mail format |
+
+**Verification:** Ensure `finishline-dev-key.pem` is created in your `environments/dev/` directory.
+
+```bash
+# Verify key file exists
+ls -la environments/dev/finishline-dev-key.pem
+
+# Set proper permissions (required for SSH)
+chmod 400 environments/dev/finishline-dev-key.pem
+
+# Verify key fingerprint
+ssh-keygen -lf environments/dev/finishline-dev-key.pem
+```
+
+#### 2.2 Provision IAM Roles
+
+IAM is the "Key Master" of AWS. These roles allow the EKS cluster and the Karpenter controller to create and manage EC2 resources on your behalf using the Principle of Least Privilege.
+
+```bash
+cd ../iam
+terragrunt apply
+```
+
+**IAM Role Inventory:**
+
+| Role Name                                                  | Trusted Entity       | Purpose                                      |
+| :--------------------------------------------------------- | :------------------- | :------------------------------------------- |
+| **finishline-infra-app-dev-eks-cluster-role**              | `eks.amazonaws.com`  | Permissions for the EKS Control Plane.       |
+| **finishline-infra-app-dev-eks-nodegroup-role**            | `ec2.amazonaws.com`  | Permissions for the EC2 worker nodes.        |
+| **finishline-infra-app-dev-eks-karpenter-controller-role** | `oidc.eks.us-east-1` | Permissions for Karpenter to provision EC2s. |
+| **finishline-infra-app-dev-eks-ebs-csi-driver-role**       | `oidc.eks.us-east-1` | Permissions for EBS CSI driver.              |
+| **finishline-infra-app-dev-jumphost-role**                 | `ec2.amazonaws.com`  | Permissions for Jumphost EC2 instance.       |
+
+**IAM Policies Attached:**
+
+| Role                     | Attached Policies                                                                         | Purpose                      |
+| :----------------------- | :---------------------------------------------------------------------------------------- | :--------------------------- |
+| **EKS Cluster Role**     | `AmazonEKSClusterPolicy`                                                                  | EKS control plane management |
+| **EKS Nodegroup Role**   | `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly` | Node networking, ECR access  |
+| **Karpenter Controller** | Custom inline policy (EC2, IAM, EKS, SSM, Pricing)                                        | Dynamic node provisioning    |
+| **EBS CSI Driver**       | `AmazonEBSCSIDriverPolicy`                                                                | EBS volume management        |
+| **Jumphost**             | `AmazonSSMManagedInstanceCore`, Custom EKS access policy                                  | SSM access, EKS describe     |
+
+**IAM Policies Detailed:**
+
+**EKS Nodegroup Role Policies:**
+
+- `AmazonEKSWorkerNodePolicy` - EKS node authentication and basic permissions
+- `AmazonEKS_CNI_Policy` - VPC CNI plugin for pod networking (ENI management)
+- `AmazonEC2ContainerRegistryReadOnly` - Pull container images from ECR
+
+**Karpenter Controller Custom Policy:**
+
+```json
+{
+	"Statement": [
+		{
+			"Action": [
+				"ec2:RunInstances",
+				"ec2:CreateFleet",
+				"ec2:CreateLaunchTemplate",
+				"ec2:CreateLaunchTemplateVersion",
+				"ec2:DeleteLaunchTemplate",
+				"ec2:DescribeInstances",
+				"ec2:DescribeInstanceTypes",
+				"ec2:DescribeLaunchTemplates",
+				"ec2:DescribeSecurityGroups",
+				"ec2:DescribeSubnets",
+				"ec2:TerminateInstances"
+			],
+			"Effect": "Allow",
+			"Resource": "*"
+		},
+		{
+			"Action": ["iam:PassRole"],
+			"Effect": "Allow",
+			"Resource": "arn:aws:iam::*:role/finishline-infra-app-dev-eks-karpenter-node-role"
+		},
+		{
+			"Action": ["eks:DescribeCluster", "eks:DescribeNodegroup"],
+			"Effect": "Allow",
+			"Resource": "*"
+		},
+		{
+			"Action": ["ssm:GetParameter"],
+			"Effect": "Allow",
+			"Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
+		},
+		{
+			"Action": ["pricing:GetProducts"],
+			"Effect": "Allow",
+			"Resource": "*"
+		}
+	],
+	"Version": "2012-10-17"
+}
+```
+
+**EBS CSI Driver Policy:**
+
+- `AmazonEBSCSIDriverPolicy` - Full EBS volume management (create, attach, delete, snapshot)
+
+**Jumphost Policies:**
+
+- `AmazonSSMManagedInstanceCore` - AWS Systems Manager Session Manager access
+- Custom EKS access policy - Describe cluster and nodegroup information
+
+**Verify IAM Roles:**
+
+```bash
+# 1. List all IAM roles created
+aws iam list-roles --query "Roles[?contains(RoleName, 'finishline-infra-app-dev')].{Name: RoleName, Arn: Arn, CreateDate: CreateDate}"
+
+# 2. Get EKS cluster role details
+aws iam get-role --role-name finishline-infra-app-dev-eks-cluster-role \
+  --query "Role.{RoleName: RoleName, Arn: Arn, CreateDate: CreateDate, TrustPolicy: AssumeRolePolicyDocument}"
+
+# 3. Get nodegroup role details
+aws iam get-role --role-name finishline-infra-app-dev-eks-nodegroup-role \
+  --query "Role.{RoleName: RoleName, Arn: Arn, AttachedPolicies: AttachedPolicies}"
+
+# 4. Get Karpenter controller role details
+aws iam get-role --role-name finishline-infra-app-dev-eks-karpenter-controller-role \
+  --query "Role.{RoleName: RoleName, Arn: Arn, TrustPolicy: AssumeRolePolicyDocument}"
+
+# 5. Verify OIDC trust relationship for Karpenter
+aws iam get-role --role-name finishline-infra-app-dev-eks-karpenter-controller-role \
+  --query "Role.AssumeRolePolicyDocument.Statement[?Action=='sts:AssumeRoleWithWebIdentity'].Principal"
+
+# 6. List attached policies for a role
+aws iam list-attached-role-policies --role-name finishline-infra-app-dev-eks-nodegroup-role
+
+# 7. Get inline policy document
+aws iam get-role-policy --role-name finishline-infra-app-dev-eks-karpenter-controller-role \
+  --policy-name KarpenterControllerPolicy --query "PolicyDocument"
+```
+
+**OIDC Provider Configuration:**
+
+After EKS cluster creation, the IAM module updates to create IRSA (IAM Roles for Service Accounts) roles that trust the EKS OIDC provider.
+
+```bash
+# Get OIDC provider URL from EKS cluster
+OIDC_URL=$(aws eks describe-cluster --name finishline-infra-app-dev-eks --region us-east-1 \
+  --query "cluster.identity.oidc.issuer" --output text | sed 's|https://||')
+echo "OIDC Provider URL: $OIDC_URL"
+
 # List OIDC providers
 aws iam list-open-id-connect-providers
 
-# Get provider details
-aws iam get-open-id-connect-provider \
-  --open-id-connect-provider-arn arn:aws:iam::ACCOUNT:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/XXXXX
+# Get OIDC provider details
+aws iam get-open-id-connect-provider --provider-arn arn:aws:iam::$(aws sts get-caller-identity --query 'Account' --output text):oidc-provider/$OIDC_URL \
+  --query "{Thumbprints: ThumbprintList, ClientIDs: ClientIDList, Url: Url}"
 ```
 
 ---
 
-## Part 3: Compute Deployment
+### Step 3: Compute & Scaling (EKS, Karpenter)
 
-### Step 1: Deploy EKS Cluster
+**Goal:** Launch the EKS cluster (The brain) and Karpenter (The brawn) to handle container workloads.
 
-**Purpose:** Create EKS cluster for container workloads.
+#### 3.1 Deploy the EKS Cluster
 
 ```bash
-# Navigate to EKS module
+# 1. Navigate to the EKS module
 cd ../../compute/eks
 
-# Review configuration
-cat terragrunt.hcl
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply configuration
-terragrunt apply tfplan
-
-# This takes 15-20 minutes
+# 2. Deploy the Cluster
+terragrunt apply
 ```
 
-**Verify:**
+**EKS Cluster Configuration (Dev):**
 
-> [!TIP]
-> **Kubectl 101:** `kubectl` is the command-line Swiss Army Knife for communicating with the Kubernetes API server. When you run `update-kubeconfig`, AWS securely injects an authentication token into your hidden `~/.kube/config` file.
-> 
-> *   `cluster-info` asks the Master Control Plane: "Are you alive, and where are your core services?"
-> *   `get nodes` queries the API server to list all attached EC2 worker nodes and their current health status (`Ready`).
+| Configuration                   | Value                                                     | Description                               |
+| :------------------------------ | :-------------------------------------------------------- | :---------------------------------------- |
+| **Cluster Name**                | `finishline-infra-app-dev-eks`                            | Unique cluster identifier                 |
+| **Kubernetes Version**          | `1.35`                                                    | Latest stable K8s version                 |
+| **Endpoint Public Access**      | `true`                                                    | Enabled for dev (disabled in prod)        |
+| **Endpoint Private Access**     | `true`                                                    | Always enabled for internal communication |
+| **Public Access CIDRs**         | `0.0.0.0/0`                                               | Restricted in production                  |
+| **Authentication Mode**         | `API`                                                     | EKS API-based authentication              |
+| **Bootstrap Admin Permissions** | `true`                                                    | Creator gets admin access                 |
+| **Enabled Log Types**           | `api, audit, authenticator, controllerManager, scheduler` | Full control plane logging                |
+| **Node Group Name**             | `default-nodegroup`                                       | Static node group name                    |
+| **Node Instance Types**         | `t3.medium`                                               | General purpose compute                   |
+| **Node AMI Type**               | `BOTTLEROCKET_x86_64`                                     | Container-optimized OS                    |
+| **Node Capacity Type**          | `ON_DEMAND`                                               | Predictable pricing                       |
+| **Node Disk Size**              | `50 GB`                                                   | gp3 storage                               |
+| **Scaling Config**              | `desired: 2, min: 2, max: 2`                              | Fixed size for dev                        |
+| **Update Config**               | `max_unavailable: 1`                                      | Rolling update strategy                   |
+
+**EKS Addons Deployed:**
+| Addon | Purpose | Management |
+| :--- | :--- | :--- |
+| **vpc-cni** | Amazon VPC CNI for pods | AWS managed |
+| **coredns** | Kubernetes DNS service | AWS managed |
+| **kube-proxy** | Network proxy for services | AWS managed |
+| **aws-ebs-csi-driver** | EBS volume provisioning | AWS managed with IRSA |
+
+**3.1.1 Configure Local Kubeconfig:**
 
 ```bash
-# 1. Download the authentication token to your machine so kubectl can talk to the EKS API
+# Update kubeconfig with EKS cluster credentials
 aws eks update-kubeconfig --name finishline-infra-app-dev-eks --region us-east-1
 
-# 2. Check cluster control plane status
+# Verify cluster connectivity
 kubectl cluster-info
 
-# 3. Check the health of your managed EC2 worker nodes
-kubectl get nodes
+# Check node status
+kubectl get nodes -o wide
 
-# Expected Output (Proves your nodes successfully registered with the Control Plane):
-# NAME                          STATUS   ROLES    AGE   VERSION
-# ip-10-0-10-1.ec2.internal     Ready    <none>   5m    v1.30.x
-# ip-10-0-11-1.ec2.internal     Ready    <none>   5m    v1.30.x
+# View cluster information
+kubectl version --short
 ```
 
----
-
-### Step 2: Deploy Jumphost
-
-**Purpose:** Create bastion host for private subnet access.
+**3.1.2 Verify EKS Cluster via AWS CLI:**
 
 ```bash
-# Navigate to Jumphost module
-cd ../jumphost
+# Get cluster details
+aws eks describe-cluster --name finishline-infra-app-dev-eks --region us-east-1
 
-# Review configuration
-cat terragrunt.hcl
+# Check cluster status
+aws eks describe-cluster --name finishline-infra-app-dev-eks --region us-east-1 \
+  --query 'cluster.{status:status,version:version,endpoint:endpoint}'
 
-# Plan deployment
-terragrunt plan -out=tfplan
+# List node groups
+aws eks list-nodegroups --cluster-name finishline-infra-app-dev-eks --region us-east-1
 
-# Apply configuration
-terragrunt apply tfplan
+# Get node group details
+aws eks describe-nodegroup --cluster-name finishline-infra-app-dev-eks --region us-east-1 \
+  --nodegroup-name default-nodegroup
 ```
 
-**Connect to Jumphost:**
+#### 3.2 Deploy the Karpenter Autoscaler
 
 ```bash
-# Get jumphost public IP
-JUMP_IP=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=finishline-infra-app-dev-jumphost" \
-  --query "Reservations[0].Instances[0].PublicIpAddress" \
-  --output text)
-
-# SSH to jumphost
-ssh -i /path/to/finishline-infra-app-dev-key.pem ec2-user@$JUMP_IP
-```
-
----
-
-### Step 3: Deploy Karpenter
-
-**Purpose:** Install Karpenter autoscaler for efficient node provisioning.
-
-**Important Prerequisites:**
-
-Before deploying Karpenter, ensure:
-
-1. EKS cluster has **public endpoint enabled** (for dev environment), OR
-2. You are running from within the VPC (e.g., jumphost)
-3. IAM roles are created (`security/iam`) with Karpenter controller and node roles
-4. VPC and security groups have `karpenter.sh/discovery` tags
-
-**Enable EKS Public Access (Dev Only):**
-
-```bash
-# 1. Update EKS configuration to enable public access
-cd ../../compute/eks
-vi terragrunt.hcl
-
-# Change:
-# endpoint_public_access = false
-# To:
-# endpoint_public_access = true
-
-# 2. Apply the change
-terragrunt apply
-
-# 3. Verify public access is enabled
-aws eks describe-cluster --name finishline-infra-app-dev-eks \
-  --query "cluster.resourcesVpcConfig.{endpointPrivateAccess:endpointPrivateAccess,endpointPublicAccess:endpointPublicAccess}"
-
-# Expected: endpointPublicAccess = true
-
-# 4. Navigate to Karpenter module
-cd ../karpenter
-```
-
-#### 3.1 Apply Terraform Module (All-in-One)
-
-**Important:** The Karpenter module now handles everything in a single apply:
-
-- CRD installation (EC2NodeClass, NodePool, NodeClaim)
-- Helm chart installation (controller)
-- EC2NodeClass resource
-- NodePool resource
-
-```bash
-# Navigate to Karpenter module
+# 1. Navigate to the Karpenter module
 cd ../karpenter
 
-# Review configuration
-cat terragrunt.hcl
-
-# Initialize (downloads kubectl provider)
-terragrunt init
-
-# Plan deployment
-terragrunt plan -out=tfplan
-
-# Apply - Creates all Karpenter resources
-terragrunt apply tfplan
-```
-
-**What this creates (in order):**
-
-1. `kubectl_manifest.karpenter_crds` - EC2NodeClass CRD
-2. `kubectl_manifest.karpenter_crds_nodepool` - NodePool CRD
-3. `kubectl_manifest.karpenter_crds_nodeclaim` - NodeClaim CRD
-4. `helm_release.karpenter` - Karpenter controller (OCI chart)
-5. `time_sleep.wait_for_karpenter_crds` - 60-second buffer
-6. `kubectl_manifest.karpenter_ec2_node_class` - EC2NodeClass resource
-7. `kubectl_manifest.karpenter_node_pool` - NodePool resource
-
-**Expected Timeline:**
-
-- CRD installation: ~10-15s
-- Helm chart installation: ~30-60s
-- Time buffer: 60s
-- Karpenter resources: ~10s
-- **Total: ~2-3 minutes**
-
-**Troubleshooting "cannot create REST client" Error:**
-
-If you see this error:
-
-```
-Error: Failed to construct REST client
-  with kubectl_manifest.karpenter_ec2_node_class,
-  cannot create REST client: no client config
-```
-
-**Resolution:**
-
-1. Ensure EKS public endpoint is enabled (see above)
-2. Wait 2-3 minutes after enabling public access for changes to propagate
-3. Re-run `terragrunt apply`
-
-**Alternative:** Apply from jumphost (inside VPC):
-
-```bash
-# SSH to jumphost
-JUMP_IP=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*jumphost*" \
-  --query "Reservations[0].Instances[0].PublicIpAddress" \
-  --output text)
-ssh -i /path/to/key.pem ec2-user@$JUMP_IP
-
-# From jumphost, apply Karpenter
-cd /path/to/karpenter
+# 2. Apply Karpenter
 terragrunt apply
 ```
 
-#### 3.2 Helm Chart Installation
+**Karpenter Configuration (Dev):**
 
-The Karpenter Helm chart is managed by the `helm_release` resource in the Terraform module. The chart is installed from the AWS ECR public OCI registry:
+| Configuration            | Value                           | Description                    |
+| :----------------------- | :------------------------------ | :----------------------------- |
+| **Cluster Name**         | `finishline-infra-app-dev-eks`  | Target EKS cluster             |
+| **Namespace**            | `karpenter`                     | Karpenter controller namespace |
+| **Helm Chart Version**   | `1.0.8`                         | Karpenter controller version   |
+| **Instance Types**       | `m5.large, m5.xlarge, c5.large` | Compute optimized families     |
+| **Capacity Types**       | `spot, on-demand`               | Cost-optimized mix             |
+| **AMI Family**           | `Bottlerocket`                  | Container-optimized OS         |
+| **Volume Size**          | `50Gi`                          | Root volume for nodes          |
+| **Volume Type**          | `gp3`                           | General purpose SSD            |
+| **Max CPU**              | `50 cores`                      | Cluster-wide limit             |
+| **Architecture**         | `amd64`                         | x86_64 instances only          |
+| **OS**                   | `linux`                         | Linux containers               |
+| **Consolidation Policy** | `WhenEmpty`                     | Remove empty nodes             |
+| **Consolidate After**    | `30s`                           | Delay before consolidation     |
+| **Expire After**         | `720h (30 days)`                | Node expiration                |
+| **Detailed Monitoring**  | `false`                         | CloudWatch detailed monitoring |
+| **Interruption Queue**   | Not configured                  | SQS for spot interruption      |
 
-```
-oci://public.ecr.aws/karpenter/karpenter
-```
+**Karpenter CRDs Installed:**
+| CRD | Purpose | API Group |
+| :--- | :--- | :--- |
+| **EC2NodeClass** | Defines EC2 configuration (AMI, subnet, security group, IAM) | `karpenter.k8s.aws/v1` |
+| **NodePool** | Defines provisioning constraints and limits | `karpenter.sh/v1` |
+| **NodeClaim** | Represents a requested node capacity | `karpenter.sh/v1` |
 
-**Chart Version:** 1.0.8
+**Karpenter IAM Permissions (Controller Role):**
 
-**Configuration:**
+- `ec2:*` - Full EC2 management for node provisioning
+- `iam:PassRole` - Pass node IAM role to EC2
+- `eks:DescribeCluster` - Cluster endpoint discovery
+- `eks:DescribeNodegroup` - Node group information
+- `ssm:GetParameter` - AMI lookup from SSM
+- `pricing:GetProducts` - Spot pricing for optimization
 
-- `create_namespace = true` - Creates karpenter namespace automatically
-- `skip_crds = true` - CRDs are installed separately via kubectl_manifest
-- `wait = true` - Waits for controller to be ready
-- `wait_for_jobs = true` - Waits for any Helm jobs to complete
-
-No manual `helm install` is required. When you run `terragrunt apply` on the Karpenter module, Terraform automatically installs/upgrades the Helm chart.
-
-**Important:** Ensure you are using Helm provider >= 3.0. If you encounter `Unsupported block type` errors for `set` blocks, see [Helm Provider set Block Syntax Error](#helm-provider-set-block-syntax-error).
-
-#### 3.3 Verify Karpenter
+**3.2.1 Verify Karpenter Status:**
 
 ```bash
-# Update kubeconfig
-aws eks update-kubeconfig --name finishline-infra-app-dev-eks --region us-east-1
+# 1. Check if the controller is running
+kubectl get pods -n karpenter -o wide
 
-# Check CRDs
+# 2. Verify IRSA (IAM Roles for Service Accounts)
+#    This ensures the Karpenter pod has the AWS permissions to create EC2s.
+kubectl get sa karpenter -n karpenter -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
+
+# 3. Check CRDs installation
 kubectl get crds | grep karpenter
 
-# Expected output:
-# ec2nodeclasses.karpenter.k8s.aws          2024-01-01T00:00:00Z
-# nodeclaims.karpenter.k8s.aws              2024-01-01T00:00:00Z
-# nodepools.karpenter.sh                    2024-01-01T00:00:00Z
-
-# Check EC2NodeClass and NodePool
-kubectl get ec2nodeclass
-kubectl get nodepool
-
-# Expected output:
-# NAME      ZONES        USAGELIMITED   READY   AGE
-# default   us-east-1a   true           True    2m
-
-# NAME    TYPE        NODECLASS   MIN   MAX   WEIGHT   READY   AGE
-# default   provision   default     -     -     100      True    2m
-
-# Check Karpenter pods
-kubectl get pods -n karpenter
-
-# Expected:
-# NAME                         READY   STATUS    RESTARTS   AGE
-# karpenter-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
-
-# Check Karpenter logs
-kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --tail=50
-
-# Expected messages:
-# "Discovered security group"
-# "Discovered subnets"
-# "Starting controller"
-# "Successfully synced secrets"
-```
-
-#### 3.4 Test Karpenter Scaling
-
-```bash
-# Create a test deployment that will trigger scaling
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: inflate
-spec:
-  replicas: 10
-  selector:
-    matchLabels:
-      app: inflate
-  template:
-    metadata:
-      labels:
-        app: inflate
-  template:
-    metadata:
-      labels:
-        app: inflate
-    spec:
-      containers:
-      - name: inflate
-        image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
-        resources:
-          requests:
-            cpu: 1
-EOF
-
-# Watch Karpenter provision nodes
-kubectl get nodes --watch
-
-# In another terminal, watch Karpenter logs
-kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter -f
-
-# Expected: Should see "Created node" messages
-
-# Clean up test workload (after testing)
-kubectl delete deployment inflate
-```
-
-#### 3.5 Karpenter Troubleshooting
-
-```bash
-# Check if Karpenter can see pending pods
-kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter | grep -i "pending\|unschedulable"
-
-# Check EC2NodeClass status
+# 4. Verify EC2NodeClass configuration
 kubectl get ec2nodeclass default -o yaml
 
-# Check NodePool status
+# 5. Verify NodePool configuration
 kubectl get nodepool default -o yaml
 
-# Common issues and resolutions:
+# 6. Check Karpenter logs for provisioning activity
+kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter --tail=50
 
-# 1. "No security groups found"
-# Resolution: Add karpenter.sh/discovery tag to security groups
-aws ec2 create-tags --resources sg-xxx --tags Key=karpenter.sh/discovery,Value=finishline-infra-app-dev-eks
+# 7. Test Karpenter scaling (create a pending pod)
+kubectl run scale-test --image=nginx --overrides='
+{
+  "spec": {
+    "containers": [{
+      "name": "nginx",
+      "image": "nginx",
+      "resources": {
+        "requests": {
+          "cpu": "2",
+          "memory": "4Gi"
+        }
+      }
+    }]
+  }
+}' --dry-run=client -o yaml | kubectl apply -f -
 
-# 2. "No subnets found"
-# Resolution: Add karpenter.sh/discovery tag to subnets
-aws ec2 create-tags --resources subnet-xxx --tags Key=karpenter.sh/discovery,Value=finishline-infra-app-dev-eks
+# Watch for new node provisioning
+watch kubectl get nodes
+```
 
-# 3. "No IAM instance profile"
-# Resolution: Verify instance profile name in EC2NodeClass
-terragrunt output karpenter_node_instance_profile_name
+**3.2.2 Karpenter Troubleshooting:**
 
-# 4. IRSA not working
-# Resolution: Verify service account annotation
-kubectl get sa karpenter -n karpenter -o yaml | grep eks.amazonaws.com/role-arn
+```bash
+# Check for provisioning errors
+kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter | grep -i error
+
+# Verify subnet discovery (must have karpenter.sh/discovery tag)
+aws ec2 describe-subnets --filters "Name=tag:karpenter.sh/discovery,Values=finishline-infra-app-dev-eks"
+
+# Verify security group discovery
+aws ec2 describe-security-groups --filters "Name=tag:karpenter.sh/discovery,Values=finishline-infra-app-dev-eks"
+
+# Check node claims
+kubectl get nodeclaims -o wide
+
+# Check node pool status
+kubectl describe nodepool default
 ```
 
 ---
 
-## Part 4: Security Hardening
+### Step 4: Dev Verification Scripts
 
-### Enable HTTPS/TLS
-
-**Purpose:** Encrypt traffic between clients and ALB.
-
-#### Step 1: Request SSL Certificate
+Don't trust—verify. Run these scripts to ensure the `dev` environment is 100% stable before promotion.
 
 ```bash
-# Request ACM certificate
-aws acm request-certificate \
-  --domain-name "*.finishline.example.com" \
-  --subject-alternative-names "finishline.example.com" \
-  --validation-method DNS \
-  --region us-east-1
+# 1. Verify Networking (VPC, Subnets, ALB)
+./terraform/scripts/verify-addons.sh
 
-# Note the certificate ARN
-# arn:aws:acm:us-east-1:123456789012:certificate/xxx-xxx-xxx
+# 2. Verify Karpenter Scaling
+#    This script will "pressure" the cluster to see if Karpenter spins up a new node.
+./terraform/scripts/verify-karpenter.sh
 ```
 
-#### Step 2: Validate Certificate
+**Karpenter Verification Script ([`verify-karpenter.sh`](terraform/scripts/verify-karpenter.sh)) checks:**
+
+1. EC2NodeClass existence
+2. NodePool configuration
+3. Karpenter controller pod status
+4. IRSA (IAM Roles for Service Accounts) annotation
+5. CRD installation (3 CRDs expected)
+6. Subnet discovery functionality
+
+---
+
+### Step 4.1: Comprehensive EKS Cluster Verification
+
+The following commands provide in-depth verification of the EKS cluster, node groups, addons, and workloads.
+
+#### 4.1.1 Cluster Information & Status
 
 ```bash
-# Get validation CNAME records
-aws acm describe-certificate \
-  --certificate-arn arn:aws:acm:us-east-1:123456789012:certificate/xxx \
-  --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
-  --output json
+# Set environment variables for reuse
+export CLUSTER_NAME="finishline-infra-app-dev-eks"
+export REGION="us-east-1"
 
-# Add CNAME record to Route53
-# Name: _xxx.finishline.example.com
-# Value: _yyy.acm-validations.aws
+# 1. Get detailed cluster information
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION
+
+# 2. Extract key cluster details
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query '{
+    Name: cluster.name,
+    Version: cluster.version,
+    Status: cluster.status,
+    Endpoint: cluster.endpoint,
+    OIDCIssuer: cluster.identity.oidc.issuer,
+    PlatformVersion: cluster.platformVersion,
+    Arn: cluster.arn
+  }'
+
+# 3. Check cluster endpoint access configuration
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query '{
+    PublicAccess: cluster.resourcesVpcConfig.endpointPublicAccess,
+    PrivateAccess: cluster.resourcesVpcConfig.endpointPrivateAccess,
+    PublicAccessCIDRs: cluster.resourcesVpcConfig.publicAccessCidrs,
+    SecurityGroups: cluster.resourcesVpcConfig.securityGroupIds,
+    Subnets: cluster.resourcesVpcConfig.subnetIds
+  }'
+
+# 4. Verify cluster logging configuration
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query 'cluster.logging.clusterLogging[*].{Types: types, Enabled: enabled}'
+
+# 5. Check cluster health status
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query 'cluster.health.{Issues: issues[*].{Code: code, Message: message, ResourceIds: resourceIds}}'
 ```
 
-#### Step 3: Update ALB Configuration
+#### 4.1.2 Node Group Verification
 
-```hcl
-# environments/dev/networking/alb/terragrunt.hcl
-inputs = {
-  listener_port             = 443
-  listener_protocol         = "HTTPS"
-  listener_ssl_policy       = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  listener_certificate_arn  = "arn:aws:acm:us-east-1:123456789012:certificate/xxx"
+```bash
+# 1. List all node groups in the cluster
+aws eks list-nodegroups --cluster-name $CLUSTER_NAME --region $REGION
+
+# 2. Get detailed node group information
+aws eks describe-nodegroup --cluster-name $CLUSTER_NAME --region $REGION \
+  --nodegroup-name default-nodegroup
+
+# 3. Check node group scaling configuration
+aws eks describe-nodegroup --cluster-name $CLUSTER_NAME --region $REGION \
+  --nodegroup-name default-nodegroup \
+  --query '{
+    NodegroupName: nodegroup.nodegroup_name,
+    Status: nodegroup.status,
+    AMIType: nodegroup.ami_type,
+    CapacityType: nodegroup.capacity_type,
+    InstanceTypes: nodegroup.instance_types,
+    DiskSize: nodegroup.disk_size,
+    ScalingConfig: nodegroup.scaling_config,
+    Subnets: nodegroup.subnets,
+    NodeRole: nodegroup.node_role
+  }'
+
+# 4. Get node group Auto Scaling Group details
+aws eks describe-nodegroup --cluster-name $CLUSTER_NAME --region $REGION \
+  --nodegroup-name default-nodegroup \
+  --query 'nodegroup.resources.autoscalingGroups[*].name'
+
+# 5. List EC2 instances in the node group
+NODEGROUP_ASG=$(aws eks describe-nodegroup --cluster-name $CLUSTER_NAME --region $REGION \
+  --nodegroup-name default-nodegroup \
+  --query 'nodegroup.resources.autoscalingGroups[0].name' --output text)
+
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names $NODEGROUP_ASG \
+  --query 'AutoScalingGroups[0].{
+    DesiredCapacity: DesiredCapacity,
+    MinSize: MinSize,
+    MaxSize: MaxSize,
+    Instances: Instances[*].{InstanceId: InstanceId, LifecycleState: LifecycleState, HealthStatus: HealthStatus}
+  }'
+```
+
+#### 4.1.3 EKS Addons Verification
+
+```bash
+# 1. List all addons in the cluster
+aws eks list-addons --cluster-name $CLUSTER_NAME --region $REGION
+
+# 2. Get detailed status for each addon
+for addon in vpc-cni coredns kube-proxy aws-ebs-csi-driver; do
+  echo "=== $addon ==="
+  aws eks describe-addon --cluster-name $CLUSTER_NAME --region $REGION \
+    --addon-name $addon \
+    --query '{
+      AddonName: addon.addon_name,
+      Status: addon.status,
+      Version: addon.addonVersion,
+      MarketplaceInformation: addon.marketplaceInformation,
+      Owner: addon.owner,
+      CreatedAt: addon.createdAt,
+      ModifiedAt: addon.modifiedAt
+    }'
+  echo ""
+done
+
+# 3. Check addon health issues
+aws eks describe-addon --cluster-name $CLUSTER_NAME --region $REGION \
+  --addon-name vpc-cni \
+  --query 'addon.health.{Issues: issues[*].{Code: code, Message: message}}'
+
+# 4. Verify addon compatibility with cluster version
+aws eks describe-addon-versions --cluster-version $(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION --query 'cluster.version' --output text) \
+  --addon-names vpc-cni coredns kube-proxy aws-ebs-csi-driver \
+  --query 'addons[*].{Name: addonName, LatestVersion: addonVersions[-1].addonVersion}'
+```
+
+#### 4.1.4 Kubernetes Cluster Verification (kubectl)
+
+```bash
+# 1. Update kubeconfig for the cluster
+aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
+
+# 2. Verify cluster connectivity
+kubectl cluster-info
+
+# 3. Get all nodes with detailed information
+kubectl get nodes -o wide
+
+# 4. Get nodes with custom columns for capacity and conditions
+kubectl get nodes -o custom-columns='
+NAME:.metadata.name,
+STATUS:.status.conditions[-1].type,
+CPU_CAPACITY:.status.capacity.cpu,
+MEMORY_CAPACITY:.status.capacity.memory,
+OS_IMAGE:.status.nodeInfo.osImage,
+KUBELET_VERSION:.status.nodeInfo.kubeletVersion,
+CONTAINER_VERSION:.status.nodeInfo.containerRuntimeVersion
+'
+
+# 5. Check node conditions (Ready, MemoryPressure, DiskPressure, PIDPressure)
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[*]}{.type}={.status}{" "}{end}{"\n"}{end}'
+
+# 6. List all pods across all namespaces
+kubectl get pods -A -o wide
+
+# 7. Check pods by namespace
+kubectl get pods -n kube-system -o wide
+kubectl get pods -n karpenter -o wide
+
+# 8. Verify system-critical pods are running
+kubectl get pods -n kube-system -l k8s-app=kube-proxy
+kubectl get pods -n kube-system -l k8s-app=aws-node
+kubectl get pods -n kube-system -l k8s-app=coredns
+kubectl get pods -n kube-system -l app=aws-ebs-csi-controller
+
+# 9. Check for pending pods (indicates scheduling issues)
+kubectl get pods --all-namespaces --field-selector=status.phase=Pending
+
+# 10. Describe a specific pod for troubleshooting
+kubectl describe pod -n kube-system -l k8s-app=coredns
+```
+
+#### 4.1.5 EKS Access & Authentication Verification
+
+```bash
+# 1. List EKS access entries
+aws eks list-access-entries --cluster-name $CLUSTER_NAME --region $REGION
+
+# 2. Get access entry details
+aws eks describe-access-entry --cluster-name $CLUSTER_NAME --region $REGION \
+  --principal-arn arn:aws:iam::$(aws sts get-caller-identity --query 'Account' --output text):root \
+  --query '{
+    PrincipalArn: accessEntry.principalArn,
+    KubernetesGroups: accessEntry.kubernetesGroups,
+    Type: accessEntry.type,
+    CreatedAt: accessEntry.createdAt,
+    ModifiedAt: accessEntry.modifiedAt
+  }'
+
+# 3. List access policy associations
+aws eks list-access-policy-associations --cluster-name $CLUSTER_NAME --region $REGION \
+  --principal-arn arn:aws:iam::$(aws sts get-caller-identity --query 'Account' --output text):root
+
+# 4. Verify OIDC provider configuration
+OIDC_ISSUER=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query 'cluster.identity.oidc.issuer' --output text)
+echo "OIDC Issuer URL: $OIDC_ISSUER"
+
+# Extract OIDC provider ARN
+OIDC_PROVIDER_ARN=$(aws iam list-open-id-connect-providers | grep -o "oidc-provider/${OIDC_ISSUER#*://}" || echo "")
+echo "OIDC Provider ARN: $OIDC_PROVIDER_ARN"
+
+# 5. Check OIDC provider thumbprint
+aws iam get-open-id-connect-provider --provider-arn $OIDC_PROVIDER_ARN \
+  --query '{Thumbprints: ThumbprintList, ClientIDList: ClientIDList}'
+```
+
+#### 4.1.6 VPC CNI & Network Verification
+
+```bash
+# 1. Check VPC CNI configuration
+kubectl get daemonset aws-node -n kube-system -o yaml
+
+# 2. Verify VPC CNI environment variables
+kubectl get daemonset aws-node -n kube-system -o jsonpath='{.spec.template.spec.containers[0].env}'
+
+# 3. Check aws-node pod logs
+kubectl logs -n kube-system -l k8s-app=aws-node --tail=50
+
+# 4. Verify ENI configuration on nodes
+kubectl run eni-check --image=amazonlinux:2 --rm -it --restart=Never -- \
+  bash -c "yum install -y jq && curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/ | head -1 | xargs -I {} curl -s http://169.254.169.254/latest/meta-data/network/interfaces/{}/"
+
+# 5. Test DNS resolution from within cluster
+kubectl run dns-test --image=busybox:1.28 --rm -it --restart=Never -- \
+  nslookup kubernetes.default
+
+# 6. Verify CoreDNS configuration
+kubectl get configmap coredns -n kube-system -o yaml
+kubectl get deployment coredns -n kube-system -o wide
+```
+
+#### 4.1.7 EKS Control Plane Logs
+
+```bash
+# 1. Check if CloudWatch log groups exist
+aws logs describe-log-groups --log-group-name-prefix /aws/eks/$CLUSTER_NAME/cluster
+
+# 2. Get recent cluster API logs
+aws logs tail "/aws/eks/$CLUSTER_NAME/cluster/api" --limit 20
+
+# 3. Get recent audit logs
+aws logs tail "/aws/eks/$CLUSTER_NAME/cluster/audit" --limit 20
+
+# 4. Get authenticator logs
+aws logs tail "/aws/eks/$CLUSTER_NAME/cluster/authenticator" --limit 20
+```
+
+#### 4.1.8 EKS Cost & Resource Utilization
+
+```bash
+# 1. Get EC2 instances running for EKS
+aws ec2 describe-instances --filters \
+  "Name=tag:aws:eks:cluster-name,Values=$CLUSTER_NAME" \
+  --query 'Reservations[*].Instances[*].{
+    InstanceId: InstanceId,
+    InstanceType: InstanceType,
+    State: State.Name,
+    LaunchTime: LaunchTime,
+    PrivateIp: PrivateIpAddress,
+    SubnetId: SubnetId
+  }'
+
+# 2. Check EBS volumes attached to EKS nodes
+aws ec2 describe-volumes --filters \
+  "Name=attachment.instance-id,Values=$(aws ec2 describe-instances --filters 'Name=tag:aws:eks:cluster-name,Values=$CLUSTER_NAME' --query 'Reservations[*].Instances[*].InstanceId' --output text)" \
+  --query 'Volumes[*].{VolumeId: VolumeId, Size: Size, VolumeType: VolumeType, State: State, Attachments: Attachments[*].{InstanceId: InstanceId, Device: Device}}'
+
+# 3. Get cluster resource tags for cost allocation
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query 'cluster.tags'
+```
+
+#### 4.1.9 EKS Security Verification
+
+```bash
+# 1. Check security groups associated with EKS cluster
+SECURITY_GROUP_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query 'cluster.resourcesVpcConfig.securityGroupIds[0]' --output text)
+
+aws ec2 describe-security-groups --group-ids $SECURITY_GROUP_ID \
+  --query 'SecurityGroups[0].{
+    GroupId: GroupId,
+    GroupName: GroupName,
+    IngressRules: IpPermissions[*].{FromPort: FromPort, ToPort: ToPort, Protocol: IpProtocol, CidrBlocks: IpRanges[*].CidrIp},
+    EgressRules: IpPermissionsEgress[*].{FromPort: FromPort, ToPort: ToPort, Protocol: IpProtocol, CidrBlocks: IpRanges[*].CidrIp}
+  }'
+
+# 2. Verify IAM roles for service accounts (IRSA)
+kubectl get sa -A -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.eks\.amazonaws\.com/role-arn}{"\n"}{end}'
+
+# 3. Check Karpenter IRSA configuration
+kubectl get sa karpenter -n karpenter -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
+
+# 4. Verify EBS CSI Driver IRSA
+kubectl get sa ebs-csi-controller-sa -n kube-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}'
+```
+
+#### 4.1.10 Quick Health Check Script
+
+```bash
+#!/bin/bash
+# Quick EKS Health Check
+CLUSTER_NAME="finishline-infra-app-dev-eks"
+REGION="us-east-1"
+
+echo "=== EKS Cluster Health Check ==="
+echo ""
+
+# Cluster Status
+echo "1. Cluster Status:"
+aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+  --query '{Name: cluster.name, Status: cluster.status, Version: cluster.version}'
+
+# Node Status
+echo ""
+echo "2. Node Group Status:"
+aws eks list-nodegroups --cluster-name $CLUSTER_NAME --region $REGION \
+  --query 'nodegroups'
+
+# Addon Status
+echo ""
+echo "3. Addon Status:"
+aws eks list-addons --cluster-name $CLUSTER_NAME --region $REGION \
+  --query 'addons'
+
+# Kubernetes Nodes
+echo ""
+echo "4. Kubernetes Nodes:"
+aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION --quiet
+kubectl get nodes -o custom-columns='NAME:.metadata.name,STATUS:.status.conditions[-1].type,CPU:.status.capacity.cpu,MEMORY:.status.capacity.memory'
+
+# Pending Pods
+echo ""
+echo "5. Pending Pods:"
+kubectl get pods --all-namespaces --field-selector=status.phase=Pending --no-headers | wc -l | xargs -I {} echo "{} pending pods"
+
+echo ""
+echo "=== Health Check Complete ==="
+```
+
+---
+
+## Part 4: Phase 2 - Environment Promotion (Stage & Prod)
+
+Once the `dev` environment is verified, we promote the infrastructure to **Stage** (Pre-production) and then **Production**.
+
+### Step 5: Migrating to Stage (10.1.x.x)
+
+**Goal:** Standardize the infrastructure in a pre-production environment.
+
+#### 5.1 Environment Variable Management
+
+To promote `dev` to `stage`, we use the `TG_ENV` variable. This ensures that the same Terraform logic is applied but with environment-specific inputs (like different CIDRs and tags).
+
+**Master Environment CIDR Mapping:**
+| Environment | VPC CIDR | Subnet Prefix(es) | AWS Region |
+| :--- | :--- | :--- | :--- |
+| **Development** | `10.0.0.0/16` | `10.0.1.0/24` to `10.0.12.0/24` | us-east-1 |
+| **Staging** | `10.1.0.0/16` | `10.1.1.0/24` to `10.1.12.0/24` | us-east-1 |
+| **Production** | `10.2.0.0/16` | `10.2.1.0/24` to `10.2.12.0/24` | us-east-1 |
+
+#### 5.2 Deploy Stage
+
+```bash
+# 1. Navigate to the stage environment
+cd terraform/environments/stage
+
+# 2. Deploy all modules in order
+#    Networking -> Security -> Compute
+terragrunt run-all apply
+```
+
+---
+
+### Step 6: Launching Production (10.2.x.x)
+
+**Goal:** Deployment to the mission-critical environment.
+
+#### 6.1 UAT Approval & Pre-Launch
+
+Ensure all manual tests in Step 4/5 have passed.
+
+#### 6.2 Deploy Production
+
+```bash
+# 1. Navigate to the prod environment
+cd ../prod
+
+# 2. Deploy everything
+terragrunt run-all apply
+```
+
+> [!CAUTION]
+> **Production Hardening (Step 6.3):**
+> For Production environments, you **must** update your `terragrunt.hcl` for the `compute/eks` module to disable public API access:
+>
+> ```hcl
+> cluster_endpoint_public_access  = false
+> cluster_endpoint_private_access = true
+> ```
+>
+> This forces all `kubectl` traffic through the Jumphost, drastically reducing the cluster's attack surface.
+
+### Environment-Specific Configurations
+
+| Configuration                 | Dev                                                     | Stage                                                   | Prod                                                    |
+| :---------------------------- | :------------------------------------------------------ | :------------------------------------------------------ | :------------------------------------------------------ |
+| **EKS Version**               | 1.35                                                    | 1.30                                                    | 1.30                                                    |
+| **Endpoint Public Access**    | ✅ Enabled                                              | ❌ Disabled                                             | ❌ Disabled                                             |
+| **Endpoint Private Access**   | ✅ Enabled                                              | ✅ Enabled                                              | ✅ Enabled                                              |
+| **Node Group Size**           | 2 nodes                                                 | 3 nodes                                                 | 3 nodes                                                 |
+| **Node Disk Size**            | 50GB                                                    | 100GB                                                   | 100GB                                                   |
+| **Node Instance Type**        | t3.medium                                               | t3.medium                                               | t3.medium                                               |
+| **Capacity Type**             | ON_DEMAND                                               | ON_DEMAND                                               | ON_DEMAND                                               |
+| **AMI Type**                  | BOTTLEROCKET_x86_64                                     | Bottlerocket                                            | Bottlerocket                                            |
+| **Authentication Mode**       | API                                                     | API                                                     | API                                                     |
+| **Cluster Logging**           | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler |
+| **Karpenter Max CPU**         | 50 cores                                                | -                                                       | -                                                       |
+| **Karpenter Instance Types**  | m5.large, m5.xlarge, c5.large                           | -                                                       | -                                                       |
+| **Karpenter Capacity Types**  | spot, on-demand                                         | -                                                       | -                                                       |
+| **Karpenter AMI Family**      | Bottlerocket                                            | Disabled                                                | Disabled                                                |
+| **Karpenter Volume Size**     | 50Gi                                                    | -                                                       | -                                                       |
+| **Jumphost Instance Type**    | t3.micro                                                | t3.micro                                                | t3.micro                                                |
+| **Jumphost Root Volume**      | 30GB gp3                                                | 30GB gp3                                                | 30GB gp3                                                |
+| **VPC CIDR**                  | 10.0.0.0/16                                             | 10.1.0.0/16                                             | 10.2.0.0/16                                             |
+| **Availability Zones**        | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      |
+| **ALB Health Check Path**     | /health                                                 | /health                                                 | /health                                                 |
+| **ALB Health Check Interval** | 5 seconds                                               | 5 seconds                                               | 5 seconds                                               |
+
+> [!NOTE]
+> **Stage and Prod environments use a modular Terragrunt structure** with separate `terragrunt.hcl` files for each module (networking, security, compute), while **Dev uses a monolithic composition approach** via the `composition/dev` module for simplicity and faster iteration.
+
+> [!IMPORTANT]
+> **Production Hardening Requirements:**
+>
+> - **Endpoint Access**: Public access must be disabled (`endpoint_public_access = false`)
+> - **Private Access Only**: All kubectl traffic must route through the Jumphost
+> - **Karpenter Disabled**: Production uses static node groups for predictable capacity
+> - **Larger Disk**: 100GB vs 50GB in dev for production workloads
+> - **More Nodes**: 3 nodes minimum for high availability vs 2 in dev
+
+---
+
+## Part 5: DevSecOps Hardening
+
+**Goal:** Transform the base infrastructure into a "Fortress" for the FinishLine application.
+
+### Step 7: SSL/TLS (HTTPS) Management
+
+Never send data in the clear.
+
+1.  **Request Certificate:** Use ACM (AWS Certificate Manager) to request a public cert for your domain.
+2.  **Validate DNS:** Ensure the CNAME records are added to your Route53 zone.
+3.  **Attach to ALB:** Update the `alb` module inputs to reference the ACM Certificate ARN.
+
+### Step 8: WAF (Web Application Firewall)
+
+Protect the front door against SQL injection, XSS, and bot scrapers.
+
+- The `alb` module includes an `enable_waf = true` flag.
+- Ensure the "Common Rule Set" and "Known Bad Inputs" rules are enabled.
+
+### Step 9: Access Logging & Audit Chains
+
+Ensure all traffic and modifications are logged for legal and security audits.
+
+- Enable **VPC Flow Logs** for network visibility.
+- Enable **ALB Access Logs** to capture HTTP/S request headers.
+- Store all logs in a restricted S3 bucket with Lifecycle Policies.
+
+---
+
+## Part 6: Operations & Troubleshooting
+
+Maintenance is 90% of a DevOps engineer's life. These playbooks ensure the infrastructure stays healthy and clean.
+
+### Step 10: Daily Health Checks
+
+Running these commands daily ensures that small issues don't turn into P1 incidents.
+
+```bash
+# 1. Check for EKS Node Pressure
+kubectl get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.capacity.cpu,MEMORY:.status.capacity.memory,STATUS:.status.conditions[-1].type
+
+# 2. Check for "Pending" Pods (Karpenter should be scaling these)
+kubectl get pods -A --field-selector=status.phase=Pending
+
+# 3. Check ALB Target Health
+aws elbv2 describe-target-health --target-group-arn <TARGET_GROUP_ARN>
+```
+
+### Step 11: Infrastructure Decommissioning (Destroy)
+
+If you need to tear down the environment (e.g., for cost savings or a clean reset), follow this **strict reverse order**.
+
+1.  **Karpenter**: Remove NodePools first to terminate spot instances.
+2.  **EKS**: Delete the cluster.
+3.  **ALB**: Remove the load balancer.
+4.  **VPC**: Delete the network.
+
+```bash
+# Automated Destroy Command (Dev)
+cd terraform/environments/dev
+terragrunt run-all destroy
+```
+
+### Step 12: Manual S3 Version Deletion Guide
+
+**Problem:** Standard `aws s3 rm` does not delete versioned objects. If versioning is enabled (Step 0), the bucket will fail to delete even if it "looks" empty.
+
+**The Nuclear Option (Manual Cleanup):**
+
+```bash
+# 1. List all object versions (Saved to file)
+aws s3api list-object-versions \
+    --bucket finishline-infra-app-e534d5ea \
+    --output json > versions.json
+
+# 2. Delete all versions using a script
+#    Junior DevOps Note: Be extremely careful with this command.
+aws s3api delete-objects \
+    --bucket finishline-infra-app-e534d5ea \
+    --delete "$(jq -c '{Objects: [.Versions[] | {Key: .Key, VersionId: .VersionId}], Quiet: true}' versions.json)"
+
+# 3. Delete all markers (if any)
+aws s3api delete-objects \
+    --bucket finishline-infra-app-e534d5ea \
+    --delete "$(jq -c '{Objects: [.DeleteMarkers[] | {Key: .Key, VersionId: .VersionId}], Quiet: true}' versions.json)"
+```
+
+### Automated Deployment Scripts
+
+The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provides automated deployment with proper dependency ordering:
+
+**Usage:**
+
+```bash
+# Deploy dev environment (default)
+./terraform/scripts/run-all.sh apply
+
+# Plan staging changes
+./terraform/scripts/run-all.sh -e stage plan
+
+# Apply production
+./terraform/scripts/run-all.sh --environment prod apply
+
+# Destroy all environments
+./terraform/scripts/run-all.sh --all destroy
+```
+
+**Deployment Order:**
+
+1. IAM Module (creates roles needed by EKS)
+2. Key Pair Module (creates SSH key for jumphost)
+3. KMS Module (creates encryption keys for EKS) - only in prod
+4. VPC Module (creates networking foundation)
+5. Security Groups Module (depends on VPC)
+6. ALB Module (depends on VPC and SG)
+7. EKS Module (depends on IAM, VPC, SG, KMS)
+8. IAM Module (OIDC Update - creates IRSA roles now that EKS exists)
+9. Karpenter Module (depends on EKS and IRSA roles)
+10. Jumphost Module (depends on VPC, SG, Key Pair, IAM)
+
+**Features:**
+
+- Prerequisites checking (Terraform, Terragrunt, AWS CLI, credentials)
+- Retry logic for AWS throttling/timeout errors
+- Detailed logging with color-coded output
+- Environment validation
+- Execution time tracking
+
+---
+
+## Appendix: Technical Reference
+
+### Terraform Module Inventory
+
+| Module              | Path                                                                         | Purpose                                                     |
+| :------------------ | :--------------------------------------------------------------------------- | :---------------------------------------------------------- |
+| **VPC**             | [`terraform/modules/networking/vpc`](terraform/modules/networking/vpc)       | VPC, subnets, NAT gateway, route tables, VPC endpoints      |
+| **Security Groups** | [`terraform/modules/networking/sg`](terraform/modules/networking/sg)         | Security groups for EKS, ALB, Jumphost                      |
+| **ALB**             | [`terraform/modules/networking/alb`](terraform/modules/networking/alb)       | Application Load Balancer, target groups, listeners         |
+| **IAM**             | [`terraform/modules/security/iam`](terraform/modules/security/iam)           | IAM roles for EKS, nodegroups, Karpenter, EBS CSI, Jumphost |
+| **Key Pair**        | [`terraform/modules/security/key_pair`](terraform/modules/security/key_pair) | SSH key pair for Jumphost access                            |
+| **EKS**             | [`terraform/modules/compute/eks`](terraform/modules/compute/eks)             | EKS cluster, node groups, access entries                    |
+| **Karpenter**       | [`terraform/modules/compute/karpenter`](terraform/modules/compute/karpenter) | Karpenter autoscaler, CRDs, NodePool, EC2NodeClass          |
+| **Jumphost**        | [`terraform/modules/compute/jumphost`](terraform/modules/compute/jumphost)   | Bastion host for secure cluster access                      |
+| **Dev Composition** | [`terraform/modules/composition/dev`](terraform/modules/composition/dev)     | Monolithic composition for dev environment                  |
+
+### IAM Role Inventory
+
+#### EKS Cluster Roles
+
+| Role Name                                       | Trusted Entity      | Attached Policies        | Purpose                                                    |
+| :---------------------------------------------- | :------------------ | :----------------------- | :--------------------------------------------------------- |
+| **finishline-infra-app-dev-eks-cluster-role**   | `eks.amazonaws.com` | `AmazonEKSClusterPolicy` | EKS control plane permissions to manage cluster operations |
+| **finishline-infra-app-stage-eks-cluster-role** | `eks.amazonaws.com` | `AmazonEKSClusterPolicy` | EKS control plane permissions for stage environment        |
+| **finishline-infra-app-prod-eks-cluster-role**  | `eks.amazonaws.com` | `AmazonEKSClusterPolicy` | EKS control plane permissions for production environment   |
+
+#### EKS Node Group Roles
+
+| Role Name                                         | Trusted Entity      | Attached Policies                                                                         | Purpose                                                       |
+| :------------------------------------------------ | :------------------ | :---------------------------------------------------------------------------------------- | :------------------------------------------------------------ |
+| **finishline-infra-app-dev-eks-nodegroup-role**   | `ec2.amazonaws.com` | `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly` | EC2 worker node permissions for pod networking and ECR access |
+| **finishline-infra-app-stage-eks-nodegroup-role** | `ec2.amazonaws.com` | `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly` | EC2 worker node permissions for stage environment             |
+| **finishline-infra-app-prod-eks-nodegroup-role**  | `ec2.amazonaws.com` | `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly` | EC2 worker node permissions for production environment        |
+
+#### Karpenter Roles (Dev Only)
+
+| Role Name                                                  | Trusted Entity                          | Attached Policies                                                                                                         | Purpose                                                     |
+| :--------------------------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------- |
+| **finishline-infra-app-dev-eks-karpenter-controller-role** | `oidc.eks.us-east-1.amazonaws.com/oidc` | Custom inline policy (see below)                                                                                          | Karpenter controller permissions to provision EC2 instances |
+| **finishline-infra-app-dev-eks-karpenter-node-role**       | `ec2.amazonaws.com`                     | `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, `AmazonEC2ContainerRegistryReadOnly`, `AmazonSSMManagedInstanceCore` | IAM instance profile for Karpenter-provisioned nodes        |
+
+**Karpenter Controller Custom Policy:**
+
+```json
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ec2:RunInstances",
+				"ec2:CreateFleet",
+				"ec2:CreateLaunchTemplate",
+				"ec2:CreateLaunchTemplateVersion",
+				"ec2:DeleteLaunchTemplate",
+				"ec2:DescribeInstances",
+				"ec2:DescribeInstanceTypes",
+				"ec2:DescribeLaunchTemplates",
+				"ec2:DescribeSecurityGroups",
+				"ec2:DescribeSubnets",
+				"ec2:TerminateInstances"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": ["iam:PassRole"],
+			"Resource": "arn:aws:iam::*:role/finishline-infra-app-dev-eks-karpenter-node-role"
+		},
+		{
+			"Effect": "Allow",
+			"Action": ["eks:DescribeCluster", "eks:DescribeNodegroup"],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": ["ssm:GetParameter"],
+			"Resource": "arn:aws:ssm:*:*:parameter/aws/service/*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": ["pricing:GetProducts"],
+			"Resource": "*"
+		}
+	]
 }
 ```
 
-```bash
-# Apply changes
-cd environments/dev/networking/alb
-terragrunt apply
+#### EBS CSI Driver Roles
+
+| Role Name                                              | Trusted Entity                          | Attached Policies          | Purpose                                                   |
+| :----------------------------------------------------- | :-------------------------------------- | :------------------------- | :-------------------------------------------------------- |
+| **finishline-infra-app-dev-eks-ebs-csi-driver-role**   | `oidc.eks.us-east-1.amazonaws.com/oidc` | `AmazonEBSCSIDriverPolicy` | EBS CSI controller permissions to manage EBS volumes      |
+| **finishline-infra-app-stage-eks-ebs-csi-driver-role** | `oidc.eks.us-east-1.amazonaws.com/oidc` | `AmazonEBSCSIDriverPolicy` | EBS CSI controller permissions for stage environment      |
+| **finishline-infra-app-prod-eks-ebs-csi-driver-role**  | `oidc.eks.us-east-1.amazonaws.com/oidc` | `AmazonEBSCSIDriverPolicy` | EBS CSI controller permissions for production environment |
+
+#### Jumphost Roles
+
+| Role Name                                    | Trusted Entity      | Attached Policies                                        | Purpose                                             |
+| :------------------------------------------- | :------------------ | :------------------------------------------------------- | :-------------------------------------------------- |
+| **finishline-infra-app-dev-jumphost-role**   | `ec2.amazonaws.com` | `AmazonSSMManagedInstanceCore`, Custom EKS access policy | Jumphost EC2 permissions for SSM and cluster access |
+| **finishline-infra-app-stage-jumphost-role** | `ec2.amazonaws.com` | `AmazonSSMManagedInstanceCore`, Custom EKS access policy | Jumphost EC2 permissions for stage environment      |
+| **finishline-infra-app-prod-jumphost-role**  | `ec2.amazonaws.com` | `AmazonSSMManagedInstanceCore`, Custom EKS access policy | Jumphost EC2 permissions for production environment |
+
+**Jumphost EKS Access Policy:**
+
+```json
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"eks:DescribeCluster",
+				"eks:DescribeNodegroup",
+				"eks:ListAccessEntries",
+				"eks:DescribeAccessEntry"
+			],
+			"Resource": "arn:aws:eks:*:*:cluster/finishline-infra-app-*"
+		}
+	]
+}
 ```
 
-#### Step 4: Verify HTTPS
+### VPC Endpoints Configuration
+
+| Endpoint | Type      | Purpose                                        | Private Link |
+| :------- | :-------- | :--------------------------------------------- | :----------- |
+| **EKS**  | Interface | Private EKS API access without internet        | ✅           |
+| **STS**  | Interface | Secure token service for IAM role assumption   | ✅           |
+| **EC2**  | Interface | Private EC2 API access for instance management | ✅           |
+| **S3**   | Gateway   | Private S3 access via Gateway VPC Endpoint     | ✅ (Gateway) |
+
+**VPC Endpoint Security:**
+
+- All interface endpoints use private subnets
+- Security groups restrict access to EKS control plane traffic
+- No public internet required for AWS service communication
+- S3 Gateway endpoint enables private S3 access for ECR pulls
+
+### Common Error Codes & Fixes
+
+#### Terraform/Terragrunt Errors
+
+| Error                             | Cause                                                       | Fix                                                                           |
+| :-------------------------------- | :---------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `DryRunOperation`                 | IAM Policy lacks `ec2:Submit` or resource-level permissions | Update the EKS Node Role with higher permissions or check resource ARNs       |
+| `BucketNotEmpty`                  | S3 has hidden versions or delete markers                    | Follow the Manual Cleanup guide in Step 12 to delete all versions             |
+| `Namespace NotFound`              | Helm pod started before namespace creation                  | Run `kubectl create ns karpenter` manually before applying Karpenter          |
+| `RequestLimitExceeded`            | AWS API throttling due to too many requests                 | Retry logic in run-all.sh handles this automatically with exponential backoff |
+| `Throttling`                      | AWS API rate limiting                                       | Wait and retry; run-all.sh includes exponential backoff (max 2 retries)       |
+| `AccessDenied`                    | IAM permissions insufficient for the action                 | Check IAM role policies and trust relationships                               |
+| `InvalidSubnetID.NotFound`        | Subnet doesn't exist in the region                          | Verify VPC module was applied successfully and subnets are created            |
+| `InvalidSecurityGroupID.NotFound` | Security group doesn't exist                                | Verify SG module was applied and dependencies are met                         |
+| `ClusterAlreadyExists`            | EKS cluster with same name exists                           | Use a different cluster name or delete existing cluster first                 |
+| `ResourceInUse`                   | EKS cluster is being updated or deleted                     | Wait for cluster to reach ACTIVE or DELETED state                             |
+
+#### Kubernetes/kubectl Errors
+
+| Error                | Cause                                      | Fix                                                                |
+| :------------------- | :----------------------------------------- | :----------------------------------------------------------------- |
+| `Unauthorized`       | Invalid or expired kubeconfig              | Run `aws eks update-kubeconfig --name <cluster> --region <region>` |
+| `Connection refused` | Cluster endpoint unreachable               | Check cluster status and endpoint access configuration             |
+| `Forbidden`          | RBAC denies access                         | Verify EKS access entries and IAM role mappings                    |
+| `Pending` pods       | No available nodes or resource constraints | Check node capacity, taints, and Karpenter provisioning            |
+| `CrashLoopBackOff`   | Container failing to start                 | Check pod logs: `kubectl logs <pod> -n <namespace>`                |
+| `ImagePullBackOff`   | Cannot pull container image                | Verify ECR permissions and image existence                         |
+| `OOMKilled`          | Container exceeded memory limits           | Increase memory limits or optimize application                     |
+
+#### Karpenter-Specific Errors
+
+| Error                      | Cause                                      | Fix                                                                                                                                                                |
+| :------------------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `No EC2NodeClass found`    | EC2NodeClass CRD not applied               | Apply EC2NodeClass manifest manually or re-run Karpenter module                                                                                                    |
+| `No matching nodepool`     | NodePool requirements not met              | Check instance types, capacity types, and architecture constraints                                                                                                 |
+| `Insufficient capacity`    | EC2 capacity unavailable in AZ             | Try different instance types or AZs                                                                                                                                |
+| `IRSA not configured`      | Service account missing IAM annotation     | Patch service account: `kubectl patch sa karpenter -n karpenter -p '{"metadata":{"annotations":{"eks.amazonaws.com/role-arn":"arn:aws:iam::ACCOUNT:role/ROLE"}}}'` |
+| `Subnet not discovered`    | Subnets missing karpenter.sh/discovery tag | Tag subnets with `karpenter.sh/discovery=<cluster-name>`                                                                                                           |
+| `Security group not found` | Security group missing discovery tag       | Tag security groups with `karpenter.sh/discovery=<cluster-name>`                                                                                                   |
+
+#### ALB/Networking Errors
+
+| Error                     | Cause                                     | Fix                                                       |
+| :------------------------ | :---------------------------------------- | :-------------------------------------------------------- |
+| `Target unhealthy`        | Health checks failing on target instances | Check security groups allow ALB health check traffic      |
+| `No registered targets`   | Target group has no healthy instances     | Verify instances are in correct subnet and security group |
+| `Listener not configured` | ALB listener missing or misconfigured     | Check ALB module configuration and listener rules         |
+| `DNS resolution failed`   | Route53 or DNS misconfiguration           | Verify VPC DNS settings and Route53 records               |
+
+### Quick Troubleshooting Commands
 
 ```bash
-# Test HTTPS endpoint
-curl -v https://your-alb.us-east-1.elb.amazonaws.com/
-
-# Check TLS version
-openssl s_client -connect your-alb.us-east-1.elb.amazonaws.com:443 -tls1_3
-```
-
----
-
-### Deploy AWS WAF
-
-**Purpose:** Protect against common web attacks (SQLi, XSS, etc.).
-
-#### Step 1: Create WAF Module
-
-Add WAF configuration to your ALB module or create a separate WAF module.
-
-#### Step 2: Apply WAF Configuration
-
-```bash
-cd environments/dev/networking/alb
-terragrunt apply
-```
-
-#### Step 3: Verify WAF
-
-```bash
-# Check WAF Web ACL
-aws wafv2 get-web-acl --name finishline-infra-app-dev-alb-waf --scope REGIONAL
-
-# Check association
-aws wafv2 list-resources-for-web-acl --scope REGIONAL --web-acl-arn <arn>
-```
-
----
-
-### Enable Access Logging
-
-**Purpose:** Create audit trail for security analysis.
-
-#### Step 1: Create S3 Bucket for Logs
-
-```bash
-# Create S3 bucket for ALB logs
-aws s3 mb s3://finishline-infra-app-alb-logs-dev
-
-# Enable versioning
-aws s3api put-bucket-versioning --bucket finishline-infra-app-alb-logs-dev --versioning-configuration Status=Enabled
-
-# Enable encryption
-aws s3api put-bucket-encryption --bucket finishline-infra-app-alb-logs-dev \
-  --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-```
-
-#### Step 2: Enable ALB Access Logs
-
-```bash
-# Get ALB ARN
-ALB_ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[0].LoadBalancerArn" --output text)
-
-# Enable access logs
-aws elbv2 modify-load-balancer-attributes \
-  --load-balancer-arn $ALB_ARN \
-  --attributes Key=access_logs.s3.enabled,Value=true \
-  --attributes Key=access_logs.s3.bucket,Value=finishline-infra-app-alb-logs-dev \
-  --attributes Key=access_logs.s3.prefix,Value=alb-access-logs
-```
-
-#### Step 3: Query Logs with Athena
-
-```sql
--- Create Athena table
-CREATE EXTERNAL TABLE alb_logs (
-  type string,
-  time string,
-  elb string,
-  client_ip string,
-  request_verb string,
-  request_url string,
-  elb_status_code int
-)
-LOCATION 's3://finishline-infra-app-alb-logs-dev/alb-access-logs/';
-
--- Query top IPs
-SELECT client_ip, COUNT(*) as requests
-FROM alb_logs
-GROUP BY client_ip
-ORDER BY requests DESC
-LIMIT 10;
-```
-
----
-
-### Configure Monitoring
-
-**Purpose:** Set up alerts for operational visibility.
-
-#### Step 1: Create CloudWatch Alarms
-
-```bash
-# High 5xx error rate
-aws cloudwatch put-metric-alarm \
-  --alarm-name "finishline-alb-high-5xx" \
-  --alarm-description "ALB 5xx error rate is too high" \
-  --metric-name HTTPCode_ELB_5XX_Count \
-  --namespace AWS/ApplicationELB \
-  --statistic Sum \
-  --period 300 \
-  --threshold 50 \
-  --comparison-operator GreaterThanThreshold \
-  --evaluation-periods 2 \
-  --alarm-actions arn:aws:sns:us-east-1:ACCOUNT:alerts
-
-# Unhealthy hosts
-aws cloudwatch put-metric-alarm \
-  --alarm-name "finishline-alb-unhealthy-hosts" \
-  --alarm-description "ALB has unhealthy hosts" \
-  --metric-name UnHealthyHostCount \
-  --namespace AWS/ApplicationELB \
-  --statistic Average \
-  --period 300 \
-  --threshold 0 \
-  --comparison-operator GreaterThanThreshold \
-  --evaluation-periods 2 \
-  --alarm-actions arn:aws:sns:us-east-1:ACCOUNT:alerts
-```
-
-#### Step 2: Create Dashboard
-
-```bash
-# Create CloudWatch Dashboard
-aws cloudwatch put-dashboard \
-  --dashboard-name FinishLine-Infrastructure \
-  --dashboard-body '{
-    "DashboardName": "FinishLine-Infrastructure",
-    "DashboardBody": "{\"widgets\": [{\"type\": \"metric\", \"x\": 0, \"y\": 0, \"width\": 12, \"height\": 6, \"properties\": {\"metrics\": [[\"AWS/ApplicationELB\", \"RequestCount\", \"LoadBalancer\", \"app/finishline-dev\"]], \"period\": 300, \"stat\": \"Sum\", \"region\": \"us-east-1\"}}]}'
-  }
-```
-
----
-
-## Verification Guide
-
-### Verify Networking
-
-```bash
-#!/bin/bash
-echo "=== Networking Verification ==="
-
-# VPC
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=finishline-infra-app-dev-vpc" --query "Vpcs[0].VpcId" --output text)
-echo "✓ VPC ID: $VPC_ID"
-
-# Subnets
-SUBNET_COUNT=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets | length(@)" --output text)
-echo "✓ Subnets: $SUBNET_COUNT"
-
-# Internet Gateway
-IGW=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query "InternetGateways | length(@)" --output text)
-echo "✓ Internet Gateways: $IGW"
-
-# ALB
-ALB_DNS=$(aws elbv2 describe-load-balancers --query "LoadBalancers[0].DNSName" --output text)
-echo "✓ ALB DNS: $ALB_DNS"
-
-# ALB Health Check
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_DNS/)
-echo "✓ ALB HTTP Response: $HTTP_CODE"
-
-echo "=== Networking Verification Complete ==="
-```
-
-### Verify Security
-
-```bash
-#!/bin/bash
-echo "=== Security Verification ==="
-
-# Key Pair
-KEY_NAME=$(aws ec2 describe-key-pairs --filters "Name=key-name,Values=finishline*" --query "KeyPairs[0].KeyName" --output text)
-echo "✓ Key Pair: $KEY_NAME"
-
-# IAM Roles
-IAM_ROLES=$(aws iam list-roles --query "Roles[?contains(RoleName, 'finishline')].RoleName" --output text)
-echo "✓ IAM Roles:"
-echo "$IAM_ROLES" | tr ' ' '\n' | sed 's/^/  /'
-
-# OIDC Provider
-OIDC_COUNT=$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList | length(@)" --output text)
-echo "✓ OIDC Providers: $OIDC_COUNT"
-
-# Security Groups
-SG_COUNT=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=finishline-infra-app" --query "SecurityGroups | length(@)" --output text)
-echo "✓ Security Groups: $SG_COUNT"
-
-echo "=== Security Verification Complete ==="
-```
-
-### Verify Compute
-
-```bash
-#!/bin/bash
-echo "=== Compute Verification ==="
-
-# EKS Cluster
-CLUSTER_NAME=$(aws eks list-clusters --query "clusters[0]" --output text)
-echo "✓ EKS Cluster: $CLUSTER_NAME"
-
-# EKS Nodes
-NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
-echo "✓ EKS Nodes: $NODE_COUNT"
-
-# Jumphost
-JUMP_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=*jumphost*" --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
-echo "✓ Jumphost IP: $JUMP_IP"
-
-# Karpenter
-KARPENTER_POD=$(kubectl get pods -n karpenter --no-headers 2>/dev/null | wc -l)
-echo "✓ Karpenter Pods: $KARPENTER_POD"
-
-echo "=== Compute Verification Complete ==="
-```
-
-### Verify Karpenter
-
-```bash
-#!/bin/bash
-echo "=== Karpenter Verification ==="
-
-# EC2NodeClass
-EC2NC=$(kubectl get ec2nodeclass default --no-headers 2>/dev/null)
-if [ -n "$EC2NC" ]; then
-  echo "✓ EC2NodeClass: default"
-else
-  echo "✗ EC2NodeClass: NOT FOUND"
-fi
-
-# NodePool
-NODEPOOL=$(kubectl get nodepool default --no-headers 2>/dev/null)
-if [ -n "$NODEPOOL" ]; then
-  echo "✓ NodePool: default"
-else
-  echo "✗ NodePool: NOT FOUND"
-fi
-
-# Karpenter Controller
-KARPENTER_POD=$(kubectl get pods -n karpenter -l app.kubernetes.io/name=karpenter --no-headers 2>/dev/null)
-if [ -n "$KARPENTER_POD" ]; then
-  echo "✓ Karpenter Controller: Running"
-else
-  echo "✗ Karpenter Controller: NOT RUNNING"
-fi
-
-# IRSA Annotation
-IRSA=$(kubectl get sa karpenter -n karpenter -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null)
-if [ -n "$IRSA" ]; then
-  echo "✓ IRSA: Configured"
-else
-  echo "✗ IRSA: NOT CONFIGURED"
-fi
-
-echo "=== Karpenter Verification Complete ==="
-```
-
----
-
-## Operations
-
-### Daily Checks
-
-```bash
-#!/bin/bash
-# daily-check.sh
-
-echo "=== Daily Infrastructure Check ==="
-
-# ALB Target Health
-echo "1. ALB Target Health:"
-TG_ARN=$(aws elbv2 describe-target-groups --query "TargetGroups[0].TargetGroupArn" --output text)
-aws elbv2 describe-target-health --target-group-arn $TG_ARN \
-  --query "TargetHealthDescriptions[].TargetHealth.State" --output table
-
-# CloudWatch Alarms
-echo ""
-echo "2. CloudWatch Alarms:"
-aws cloudwatch describe-alarms \
-  --query "MetricAlarms[?StateValue=='ALARM'].[AlarmName,StateReason]" \
-  --output table
-
-# EKS Nodes
-echo ""
-echo "3. EKS Node Status:"
-kubectl get nodes --show-labels
-
-# Karpenter Status
-echo ""
-echo "4. Karpenter Status:"
-kubectl get pods -n karpenter
-
-# Cost Check (weekly)
-echo ""
-echo "5. Estimated Daily Cost:"
-aws ce get-cost-and-usage \
-  --time-period Start=$(date -d yesterday +%Y-%m-%01),End=$(date +%Y-%m-%d) \
-  --granularity DAILY \
-  --metrics BlendedCost \
-  --query "ResultsByTime[0].Total.BlendedCost.Amount"
-```
-
----
-
-### Incident Response
-
-#### P1: Active Attack
-
-```bash
-# 1. Enable WAF block mode immediately
-aws wafv2 update-web-acl \
-  --name finishline-alb-waf \
-  --scope REGIONAL \
-  --id <web-acl-id> \
-  --default-action Block
-
-# 2. Contact AWS Support
-aws support create-case \
-  --subject "DDoS Attack - P1" \
-  --service-code "aws-support-api" \
-  --severity-code "urgent" \
-  --category-code "technical" \
-  --communication-body "Active DDoS attack detected. Requesting Shield Advanced support."
-
-# 3. Preserve logs
-aws s3 cp s3://finishline-alb-logs/ s3://forensics-bucket/ --recursive
-
-# 4. Enable Shield Advanced (if not already)
-aws shield create-protection \
-  --name "finishline-alb-shield" \
-  --resource-arn <alb-arn>
-```
-
-#### P2: Suspicious Activity
-
-```bash
-# 1. Review WAF logs
-aws athena start-query-execution \
-  --query-string "SELECT source_ip, COUNT(*) FROM waf_logs WHERE action='BLOCK' GROUP BY source_ip ORDER BY COUNT(*) DESC LIMIT 10"
-
-# 2. Add rate limiting
-# Update WAF rule with lower threshold
-
-# 3. Block suspicious IPs
-aws wafv2 update-ip-set \
-  --name finishline-bad-ips \
-  --addresses "1.2.3.4/32" "5.6.7.8/32"
-```
-
----
-
-### Troubleshooting
-
-| Issue                 | Command                               | Resolution                        |
-| --------------------- | ------------------------------------- | --------------------------------- |
-| ALB 502 errors        | `aws elbv2 describe-target-health`    | Check target registration         |
-| SSL errors            | `openssl s_client -connect <alb>:443` | Verify ACM certificate            |
-| WAF false positives   | Check CloudWatch WAF logs             | Add rule exclusions               |
-| EKS nodes NotReady    | `kubectl describe node <node>`        | Check IAM roles, security groups  |
-| Karpenter not scaling | `kubectl logs -n karpenter`           | Check subnet/SG tags              |
-| IRSA not working      | `kubectl get sa -n karpenter -o yaml` | Verify service account annotation |
-
----
-
-## Appendix
-
-### A. Cost Estimates
-
-| Component   | Dev/Month | Stage/Month | Prod/Month |
-| ----------- | --------- | ----------- | ---------- |
-| VPC         | $0        | $0          | $0         |
-| NAT Gateway | $32.40    | $32.40      | $97.20     |
-| ALB         | $34.43    | $34.43      | $88.43     |
-| WAF         | $5.00     | $5.00       | $15.00     |
-| EKS         | $73.00    | $73.00      | $219.00    |
-| Jumphost    | $15.00    | $15.00      | $30.00     |
-| Karpenter   | Variable  | Variable    | Variable   |
-| **Total**   | **~$160** | **~$160**   | **~$450**  |
-
-### B. Quick Reference Commands
-
-```bash
-# Terraform state operations
+# Check Terraform state
 terragrunt state list
-terragrunt state show <resource>
-terragrunt import <resource> <id>
 
-# AWS CLI shortcuts
-alias k='kubectl'
-alias aws-who='aws sts get-caller-identity'
-alias alb-dns='aws elbv2 describe-load-balancers --query LoadBalancers[0].DNSName'
+# Refresh state without applying
+terragrunt refresh
 
-# Karpenter shortcuts
-alias karpenter-logs='kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter -f'
-alias karpenter-nodes='watch kubectl get nodes'
+# Show planned changes
+terragrunt plan -out=tfplan
+
+# Import existing resource
+terragrunt import <resource_type>.<resource_name> <aws_resource_id>
+
+# Check AWS service quotas
+aws service-quotas list-service-quotas --service-code eks
+
+# Check EC2 capacity
+aws ec2 describe-instance-type-offerings --region us-east-1
+
+# Verify IAM role trust policy
+aws iam get-role --role-name <role-name> --query 'Role.AssumeRolePolicyDocument'
+
+# Check CloudWatch logs for EKS
+aws logs tail /aws/eks/<cluster-name>/cluster/api --follow
 ```
 
-### C. Related Documentation
-
-- [Networking Module README](../terraform/modules/networking/README.md)
-- [Security Module README](../terraform/modules/security/README.md)
-- [Compute Module README](../terraform/modules/compute/README.md)
-- [Terraform Documentation](https://www.terraform.io/docs)
-- [Terragrunt Documentation](https://terragrunt.gruntwork.io)
-- [AWS EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
-- [Karpenter Documentation](https://karpenter.sh/docs/)
+**Final Reminder:** Always check your project tags. Every resource MUST have `Project: finishline-infra-app` and the correct `Environment` tag for cost tracking.
 
 ---
 
-**END OF RUNBOOK**
+**END OF MASTER RUNBOOK**

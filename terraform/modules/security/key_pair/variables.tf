@@ -22,10 +22,9 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "computed_tags" {
-  description = "Additional tags to apply"
+variable "common_tags" {
+  description = "Centralized common tags from root.hcl"
   type        = map(string)
-  default     = {}
 }
 
 variable "key_name" {

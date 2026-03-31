@@ -16,11 +16,11 @@ This repository contains the complete infrastructure-as-code (IaC) configuration
 
 ### Environments
 
-| Environment | Purpose | AWS Region | VPC CIDR |
-|-------------|---------|------------|----------|
-| **Dev** | Development & Testing | us-east-1 | 10.0.0.0/16 |
-| **Stage** | Staging/Pre-production | us-east-1 | 10.1.0.0/16 |
-| **Prod** | Production | us-east-1 | 10.2.0.0/16 |
+| Environment | Purpose | AWS Region | Availability Zones | VPC CIDR |
+|-------------|---------|------------|--------------------|----------|
+| **Dev** | Development & Testing | us-east-1 | 3 (a, b, c) | 10.0.0.0/16 |
+| **Stage** | Staging/Pre-production | us-east-1 | 3 (a, b, c) | 10.1.0.0/16 |
+| **Prod** | Production | us-east-1 | 3 (a, b, c) | 10.2.0.0/16 |
 
 ## Architecture
 
@@ -33,13 +33,13 @@ flowchart TD
         Route53[Route 53 DNS]
         
         subgraph VPC["VPC: Finishline Network"]
-            subgraph Public["Public Subnets (AZ-a, AZ-b)"]
+            subgraph Public["Public Subnets (AZ-a, AZ-b, AZ-c)"]
                 IGW[Internet Gateway]
                 ALB[Shared Application Load Balancer]
                 Bastion[Jumphost]
             end
             
-            subgraph Private["Private Subnets (AZ-a, AZ-b)"]
+            subgraph Private["Private Subnets (AZ-a, AZ-b, AZ-c)"]
                 subgraph EKS["EKS Cluster Boundary"]
                     IngressCtrl[Ingress Controller / IngressGroup]
                     KarpenterCtrl[Karpenter Controller]

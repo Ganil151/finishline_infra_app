@@ -81,8 +81,8 @@ variable "environment" {
   type        = string
 }
 
-variable "computed_tags" {
-  description = "Map of tags to apply to all resources"
+variable "common_tags" {
+  description = "Centralized common tags from root.hcl"
   type        = map(string)
 }
 

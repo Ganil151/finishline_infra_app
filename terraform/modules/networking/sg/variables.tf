@@ -20,6 +20,11 @@ variable "aws_region" {
   description = "AWS region"
   type        = string
 }
+
+variable "common_tags" {
+  description = "Centralized common tags from root.hcl"
+  type        = map(string)
+}
 # ===========================================================
 #               ***   Security Group Variables   ***
 # ===========================================================

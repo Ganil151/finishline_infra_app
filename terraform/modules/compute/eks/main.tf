@@ -80,7 +80,7 @@ resource "aws_eks_access_policy_association" "cluster_admins" {
 #  EKS Access Entry - For nodegroup role
 #============================================================
 resource "aws_eks_access_entry" "nodegroup" {
-  count = var.is_eks_cluster_enabled && var.node_group_role_arn != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled && var.is_eks_nodegroup_enabled ? 1 : 0
 
   cluster_name  = aws_eks_cluster.eks[0].name
   principal_arn = var.node_group_role_arn

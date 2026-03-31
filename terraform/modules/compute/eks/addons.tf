@@ -4,7 +4,7 @@
 resource "aws_eks_addon" "vpc_cni" {
   count = var.is_eks_cluster_enabled ? 1 : 0
 
-  cluster_name = var.cluster_name
+  cluster_name = aws_eks_cluster.eks[0].name
   addon_name   = "vpc-cni"
 
   resolve_conflicts_on_create = "OVERWRITE"
@@ -22,7 +22,7 @@ resource "aws_eks_addon" "vpc_cni" {
 resource "aws_eks_addon" "coredns" {
   count = var.is_eks_cluster_enabled ? 1 : 0
 
-  cluster_name = var.cluster_name
+  cluster_name = aws_eks_cluster.eks[0].name
   addon_name   = "coredns"
 
   resolve_conflicts_on_create = "OVERWRITE"
@@ -37,14 +37,15 @@ resource "aws_eks_addon" "coredns" {
   tags = local.tags
 
   depends_on = [
-    aws_eks_addon.vpc_cni
+    aws_eks_addon.vpc_cni,
+    aws_eks_node_group.nodegroup
   ]
 }
 
 resource "aws_eks_addon" "kube_proxy" {
   count = var.is_eks_cluster_enabled ? 1 : 0
 
-  cluster_name = var.cluster_name
+  cluster_name = aws_eks_cluster.eks[0].name
   addon_name   = "kube-proxy"
 
   resolve_conflicts_on_create = "OVERWRITE"
@@ -62,9 +63,9 @@ resource "aws_eks_addon" "kube_proxy" {
 # Note: aws-ebs-csi-driver addon is only created when IRSA is configured
 # (i.e., when ebs_csi_driver_role_arn is provided)
 resource "aws_eks_addon" "aws_ebs_csi_driver" {
-  count = var.is_eks_cluster_enabled && var.ebs_csi_driver_role_arn != "" ? 1 : 0
+  count = var.is_eks_cluster_enabled && var.is_ebs_csi_driver_enabled ? 1 : 0
 
-  cluster_name = var.cluster_name
+  cluster_name = aws_eks_cluster.eks[0].name
   addon_name   = "aws-ebs-csi-driver"
 
   resolve_conflicts_on_create = "OVERWRITE"
@@ -78,6 +79,9 @@ resource "aws_eks_addon" "aws_ebs_csi_driver" {
     delete = "30m"
   }
 
+  depends_on = [
+    aws_eks_node_group.nodegroup
+  ]
   tags = local.tags
 }
 
@@ -87,7 +91,7 @@ resource "aws_eks_addon" "aws_ebs_csi_driver" {
 resource "aws_eks_node_group" "nodegroup" {
   count = var.is_eks_nodegroup_enabled ? 1 : 0
 
-  cluster_name    = var.cluster_name
+  cluster_name    = aws_eks_cluster.eks[0].name
   node_group_name = var.node_group_name
   node_role_arn   = var.node_group_role_arn
   subnet_ids      = var.node_group_subnets
@@ -124,7 +128,7 @@ resource "aws_eks_node_group" "nodegroup" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes        = [labels, taints]
+    ignore_changes        = [labels, taint]
   }
 
   timeouts {
@@ -140,10 +144,7 @@ resource "aws_eks_node_group" "nodegroup" {
   })
 
   depends_on = [
-    aws_eks_cluster.eks,
-    aws_eks_addon.vpc_cni,
-    aws_eks_addon.coredns,
-    aws_eks_addon.kube_proxy
+    aws_eks_cluster.eks
   ]
 
 }

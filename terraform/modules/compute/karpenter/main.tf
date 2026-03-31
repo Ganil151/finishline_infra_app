@@ -1,5 +1,17 @@
+# ===========================================================
+#               ***   Terraform Configuration   ***
+# ===========================================================
+terraform {
+  required_providers {
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = ">= 1.14"
+    }
+  }
+}
+
 locals {
-  tags = merge(var.computed_tags, {
+  tags = merge(var.common_tags, {
     "karpenter.sh/discovery" = var.cluster_name
   })
 }
@@ -17,7 +29,20 @@ metadata:
   labels:
     app.kubernetes.io/part-of: karpenter
 spec:
-  group: karpenter.k8s.aws
+  role: "KarpenterNodeRole-finishline-infra-node"
+  amiFamily: Bottlerocket
+  amiSelectorTerms:
+    - alias: bottlerocket@latest
+  subnetSelectorTerms:
+  - tags:
+      karpenter.sh/discovery: "finishline-infra-node"
+  securityGroupSelectorTerms:
+  - tags:
+      karpenter.sh/discovery: "finishline-infra-node"
+  tags:
+    Name: "karpenter-node-finishline-infra-app
+    Project: "finishline-infra-app"
+  group: karpenter.k8s.aws  
   names:
     kind: EC2NodeClass
     listKind: EC2NodeClassList
@@ -35,6 +60,7 @@ spec:
           type: object
           x-kubernetes-preserve-unknown-fields: true
 YAML
+depends_on = [ kubectl_manifest.karpenter_crds ]
 }
 
 # CRD: NodePool
@@ -198,7 +224,7 @@ spec:
     - tags:
         ${join("\n        ", [for k, v in var.karpenter_security_group_tags : "${k}: ${v}"])}
   tags:
-    karpenter.sh/discovery: ${var.cluster_name}
+    ${join("\n    ", [for k, v in local.tags : "${k}: ${v}"])}
   blockDeviceMappings:
     - deviceName: /dev/xvda
       ebs:
