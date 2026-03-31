@@ -39,6 +39,7 @@ terraform.rc
 # terragrunt cache directories
 **/.terragrunt-cache/*
 .terraform.lock*
+terragrunt.hcl
 # Terragrunt debug output file (when using `--terragrunt-debug` option)
 # See: https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-debug
 terragrunt-debug.tfvars.json
@@ -46,5 +47,7 @@ terragrunt-debug.tfvars.json
 ## Aws Keys Pair
 
 *.pem*
+
+current-state.json
 
 trust-policy.json 
