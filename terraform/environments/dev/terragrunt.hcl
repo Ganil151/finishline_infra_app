@@ -12,6 +12,11 @@ terraform {
 locals {
   # Dynamically fetch the executor's public IPv4 address for security rules
   executor_ip = chomp(run_cmd("--terragrunt-quiet", "curl", "-s", "https://ipv4.icanhazip.com"))
+  
+  # AWS EKS OIDC Thumbprint - This is a PUBLIC, well-known value for ALL AWS EKS clusters
+  # It is NOT a secret and is the same across all AWS accounts and regions
+  # Source: https://docs.aws.amazon.com/eks/latest/userguide/enable-iam-roles-for-service-accounts.html
+  oidc_thumbprint = "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
 }
 
 inputs = {
@@ -143,7 +148,7 @@ inputs = {
   is_eks_cluster_enabled        = true
   iam_is_eks_role_enabled       = true
   is_eks_nodegroup_role_enabled = true
-  iam_oidc_thumbprint           = "REDACTED_OIDC_THUMBPRINT"
+  iam_oidc_thumbprint           = local.oidc_thumbprint
   iam_name_suffix               = ""
   iam_eks_oidc_subject          = ""
   iam_eks_oidc_namespace        = "default"
