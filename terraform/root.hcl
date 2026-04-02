@@ -9,18 +9,14 @@ locals {
   common_tags = {
     Project     = "finishline-infra-app"
     ManagedBy   = "finishline-infra-team"
-    Environment = "${get_env("TG_ENV", "dev")}"
+    Environment = get_env("TG_ENV", "dev")
     Reporter    = "Ganil Batist Yan"
   }
 
   #============================================================
   #  Conditional Provider Selection
   #============================================================
-
-  # Generate k8s providers only for modules that connect to EXISTING clusters
-  # Monolithic composition modules (dev, stage, prod) create their own EKS clusters
-  # and define their own providers internally
-  is_k8s_module = length(regexall("compute/karpenter|compute/eks$", path_relative_to_include())) > 0
+  is_k8s_module = length(regexall("compute/karpenter|compute/helm$", path_relative_to_include())) > 0
 
   k8s_provider_content = <<EOF
 #============================================================

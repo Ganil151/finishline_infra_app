@@ -63,6 +63,10 @@
     - [Step 11: Infrastructure Decommissioning (Destroy)](#step-11-infrastructure-decommissioning-destroy)
     - [Step 12: Manual S3 Version Deletion Guide](#step-12-manual-s3-version-deletion-guide)
     - [Automated Deployment Scripts](#automated-deployment-scripts)
+  - [Part 7: Trunk-Based Development (TBD) Workflow with Karpenter](#part-7-trunk-based-development-tbd-workflow-with-karpenter)
+    - [What is Trunk-Based Development (TBD)?](#what-is-trunk-based-development-tbd)
+    - [Step-by-Step TBD Workflow for Karpenter](#step-by-step-tbd-workflow-for-karpenter)
+  - [Part 8: Operation \& Troubleshooting (Continued)](#part-8-operation--troubleshooting-continued)
   - [Appendix: Technical Reference](#appendix-technical-reference)
     - [Terraform Module Inventory](#terraform-module-inventory)
     - [IAM Role Inventory](#iam-role-inventory)
@@ -119,66 +123,36 @@ The infrastructure is organized using a modular Terragrunt structure:
 
 ```
 terraform/
-├── root.hcl                          # Root Terragrunt configuration
+├── root.hcl                          # Root Terragrunt configuration (Global Tags & Backend)
 ├── environments/
-│   ├── dev/                          # Monolithic dev environment
-│   │   └── terragrunt.hcl           # Single file for all dev modules
-│   ├── stage/                        # Modular stage environment
+│   ├── dev/                          # Modular development environment
+│   │   ├── networking/               # VPC, Security Groups, ALB
+│   │   ├── security/                 # IAM, SSH Key Pairs
+│   │   └── compute/                  # EKS, Karpenter, Jumphost
+│   ├── stage/                        # Modular staging environment
 │   │   ├── networking/
-│   │   │   ├── vpc/                 # VPC configuration
-│   │   │   ├── sg/                  # Security groups
-│   │   │   └── alb/                 # Application Load Balancer
 │   │   ├── security/
-│   │   │   ├── iam/                 # IAM roles and policies
-│   │   │   └── key_pair/            # SSH key pair
 │   │   └── compute/
-│   │       ├── eks/                 # EKS cluster
-│   │       ├── karpenter/           # Karpenter autoscaler (optional)
-│   │       └── jumphost/            # Bastion host
-│   └── prod/                         # Modular prod environment
+│   └── prod/                         # Modular production environment
 │       ├── networking/
-│       │   ├── vpc/
-│       │   ├── sg/
-│       │   └── alb/
 │       ├── security/
-│       │   ├── iam/
-│       │   ├── key_pair/
-│       │   └── kms/                 # KMS keys (prod only)
 │       └── compute/
-│           ├── eks/
-│           └── jumphost/
 ├── modules/
-│   ├── composition/
-│   │   └── dev/                      # Dev composition module
-│   ├── compute/
-│   │   ├── eks/                      # EKS cluster module
-│   │   │   ├── main.tf               # EKS cluster and node group resources
-│   │   │   ├── addons.tf             # EKS addons (vpc-cni, coredns, kube-proxy, ebs-csi)
-│   │   │   ├── variables.tf          # Module variables
-│   │   │   ├── outputs.tf            # Module outputs
-│   │   │   ├── locals.tf             # Local values
-│   │   │   └── data.tf               # Data sources
-│   │   ├── karpenter/                # Karpenter autoscaler module
-│   │   │   ├── main.tf               # Karpenter CRDs, Helm chart, NodePool, EC2NodeClass
-│   │   │   └── variables.tf
-│   │   └── jumphost/                 # Bastion host module
-│   ├── networking/
-│   │   ├── vpc/                      # VPC, subnets, NAT gateway, route tables, VPC endpoints
-│   │   ├── sg/                       # Security groups for EKS, ALB, Jumphost, MySQL
-│   │   └── alb/                      # Application Load Balancer, target groups, listeners
-│   └── security/
-│       ├── iam/                      # IAM roles for EKS, nodegroups, Karpenter, EBS CSI, Jumphost
-│       └── key_pair/                 # SSH key pair for Jumphost access
+│   ├── compute/                      # Reusable compute resources
+│   │   ├── eks/                      # EKS, Node Groups, Core Addons
+│   │   ├── karpenter/                # Autoscaling CRDs & Controller
+│   │   └── jumphost/                 # Bastion host & SSM Access
+│   ├── networking/                   # Reusable network resources
+│   │   ├── vpc/                      # Core VPC & Subnets
+│   │   ├── sg/                       # Centralized Firewalls
+│   │   └── alb/                      # External Load Balancers
+│   └── security/                     # Reusable security resources
+│       ├── iam/                      # Roles for EKS & IRSA
+│       └── key_pair/                 # SSH Keys with Auto-Copy
 └── scripts/
-    ├── run-all.sh                    # Automated deployment script with dependency ordering
-    ├── destroy-all.sh                # Automated destruction script
-    ├── verify-addons.sh              # EKS addons verification
-    ├── verify-karpenter.sh           # Karpenter verification
-    ├── pre-launch-check.sh           # Pre-launch validation
-    ├── jumphost-install-tools.sh     # Jumphost bootstrap script
-    ├── fix-karpenter.sh              # Karpenter troubleshooting
-    ├── fix-karpenter-controller-role.sh  # IRSA fix script
-    └── cleanup_karpenter_crds.ps1    # Windows Karpenter cleanup
+    ├── run-all.sh                    # Automated deployment orchestrator
+    ├── verify-karpenter.sh           # Autoscaler validation script
+    └── jumphost-install-tools.sh     # Bastion bootstrap script
 ```
 
 ---
@@ -577,14 +551,85 @@ An Application Load Balancer (ALB) is a **Layer 7 (Application Layer) load balan
 **ALB Resources Created:**
 | Resource | Name Pattern | Purpose |
 | :--- | :--- | :--- |
-| **Load Balancer** | `finishline-infra-app-dev-alb` | Main ALB instance |
-| **Target Group** | `finishline-infra-app-dev-alb-tg` | Group of registered targets |
 | **Listener** | Port 80 HTTP | Accepts incoming connections |
 
-**Deploy ALB - Current Configuration:**
+---
 
-> [!NOTE]
-> **Current Project Status:** The ALB module is currently only configured for the **dev environment** via the `composition/dev` monolithic module. Stage and Prod ALB configurations are placeholders (empty `terragrunt.hcl` files) and need to be implemented.
+## Part 2: Phase 1 - Infrastructure Deployment
+
+In this phase, we build the "Foundation" of the FinishLine cloud. We deploy in a modular sequence to ensure that dependencies (like VPC and IAM) are ready before the EKS cluster is birthed.
+
+### Step 1: Networking Foundations (VPC & ALB)
+
+**Goal:** Create the private network and the entry point for internet traffic.
+
+```bash
+# 1. Deploy the VPC (Private Network, NAT, Endpoints)
+cd terraform/environments/dev/networking/vpc
+terragrunt init
+terragrunt apply
+
+# 2. Deploy Security Groups (Firewalls)
+cd ../sg
+terragrunt apply
+
+# 3. Deploy the Load Balancer (ALB)
+cd ../alb
+terragrunt apply
+```
+
+**Verification:** Ensure you can see the VPC in the AWS console with the `Project: finishline-infra-app` tag.
+
+---
+
+### Step 2: Identity & Security (IAM & Key Pairs)
+
+**Goal:** Establish the permissions and credentials needed for the cluster.
+
+```bash
+# 1. Deploy the SSH Key Pair
+cd ../../security/key_pair
+terragrunt apply
+```
+
+> [!TIP]
+> **Automation Note:** You no longer need to manually copy the SSH key! Our `auto_copy` engine automatically places the `finishline-dev-key.pem` into the `environments/dev` folder for you upon a successful apply.
+
+```bash
+# 2. Deploy IAM Roles
+cd ../iam
+terragrunt apply
+```
+
+> [!WARNING]
+> **The OIDC Conflict Fix:** If you see an `EntityAlreadyExists` error for the OIDC provider, it means a previous cluster left a record behind. Run this command to fix it instantly:
+> `terragrunt import aws_iam_openid_connect_provider.eks_oidc_provider <PROVIDER_ARN>`
+
+---
+
+### Step 3: Compute & EKS Cluster
+
+**Goal:** Launch the EKS cluster and the autoscaling nodes.
+
+```bash
+# 1. Deploy the EKS Cluster
+cd ../../compute/eks
+terragrunt apply
+```
+
+> [!IMPORTANT]
+> **Quota Resolution:** We have configured the `node_group_capacity_type` to **ON_DEMAND** as the default. This bypasses the common "Fleet Request Quota" errors found on new AWS accounts.
+
+```bash
+# 2. Deploy the Karpenter Autoscaler
+cd ../karpenter
+terragrunt apply
+
+# 3. Deploy the Jumphost (Bastion)
+cd ../jumphost
+terragrunt apply
+```
+**Project Status:** The ALB module is currently only configured for the **dev environment** via the `composition/dev` monolithic module. Stage and Prod ALB configurations are placeholders (empty `terragrunt.hcl` files) and need to be implemented.
 
 ```bash
 # ============================================
@@ -756,6 +801,124 @@ terragrunt apply
 | **Algorithm** | RSA | Asymmetric encryption |
 | **Key Length** | 4096 bits | High-security key size |
 | **Output Format** | PEM | Privacy Enhanced Mail format |
+
+**Downloading and Configuring the Private Key:**
+
+After running `terragrunt apply`, the private key is automatically saved to your Terraform working directory. Follow these steps to properly configure it:
+
+```bash
+# Step 1: Verify the key file was created
+# The key will be saved to: C:\Users\ganil\Documents\finishline_infra_app\terraform\environments\dev\finishline-dev-key.pem
+ls -la environments/dev/finishline-dev-key.pem
+
+# Step 2: Move the key to your SSH directory (recommended for Linux/Mac/WSL)
+mkdir -p ~/.ssh
+mv environments/dev/finishline-dev-key.pem ~/.ssh/
+
+# For Windows PowerShell (without WSL):
+# Move-Item environments/dev/finishline-dev-key.pem $env:USERPROFILE\.ssh\
+
+# Step 3: Set correct permissions (CRITICAL - SSH will refuse the key without this)
+chmod 400 ~/.ssh/finishline-dev-key.pem
+
+# For Windows PowerShell (without WSL):
+# icacls $env:USERPROFILE\.ssh\finishline-dev-key.pem /inheritance:r /grant:r "$($env:USERNAME):(R)"
+
+# Step 4: Verify the key fingerprint
+ssh-keygen -lf ~/.ssh/finishline-dev-key.pem
+
+# Expected output example:
+# 4096 SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx finishline-dev-key (RSA)
+```
+
+**Connecting to Jumphost:**
+
+```bash
+# Get the Jumphost public IP
+JUMPHOST_IP=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=finishline-infra-app-dev-jumphost" \
+  --query "Reservations[*].Instances[*].PublicIpAddress" \
+  --output text)
+
+# SSH to Jumphost
+ssh -i ~/.ssh/finishline-dev-key.pem ec2-user@$JUMPHOST_IP
+
+# For Windows PowerShell (without WSL):
+# ssh -i $env:USERPROFILE\.ssh\finishline-dev-key.pem ec2-user@$JUMPHOST_IP
+```
+
+**Adding to SSH Agent (Optional but Recommended):**
+
+```bash
+# Start ssh-agent (if not running)
+eval "$(ssh-agent -s)"
+
+# Add your key to the agent (you'll only need to enter the passphrase once per session)
+ssh-add ~/.ssh/finishline-dev-key.pem
+
+# Verify the key is added
+ssh-add -l
+
+# Now you can SSH without specifying the key file each time
+ssh ec2-user@$JUMPHOST_IP
+```
+
+**SSH Config Entry (Optional):**
+
+For easier access, add an entry to your SSH config file:
+
+```bash
+# Edit SSH config
+# Linux/Mac: nano ~/.ssh/config
+# Windows: notepad $env:USERPROFILE\.ssh\config
+
+# Add the following entry:
+Host finishline-dev-jumphost
+    HostName <JUMPHOST_PUBLIC_IP>
+    User ec2-user
+    IdentityFile ~/.ssh/finishline-dev-key.pem
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+# Now you can connect with a simple command:
+ssh finishline-dev-jumphost
+```
+
+**Security Best Practices:**
+
+| Practice                                  | Description                                                         |
+| :---------------------------------------- | :------------------------------------------------------------------ |
+| **Never commit keys to Git**              | Add `*.pem` to your `.gitignore` file                               |
+| **Use separate keys per environment**     | Dev, Stage, and Prod should have different keys                     |
+| **Rotate keys periodically**              | Every 90 days for production environments                           |
+| **Use SSM Session Manager when possible** | No SSH keys required for EC2 access                                 |
+| **Delete from project directory**         | After copying to `~/.ssh/`, delete from Terraform working directory |
+
+**Troubleshooting:**
+
+| Issue                                    | Solution                                                                            |
+| :--------------------------------------- | :---------------------------------------------------------------------------------- |
+| `WARNING: UNPROTECTED PRIVATE KEY FILE!` | Run `chmod 400 ~/.ssh/finishline-dev-key.pem`                                       |
+| `Permission denied (publickey)`          | Verify the key is associated with the Jumphost instance and permissions are correct |
+| Key file not found                       | Re-run `terragrunt apply` in the `security/key_pair` directory                      |
+| `Load key "...": error in libcrypto`     | Key may be corrupted; regenerate by re-applying the module                          |
+
+**Alternative: Retrieve Key from AWS Systems Manager (if configured)**
+
+If the key was stored in SSM Parameter Store:
+
+```bash
+# Retrieve the private key from SSM Parameter Store
+aws ssm get-parameter \
+  --name "/ec2/keypair/finishline-dev-key" \
+  --with-decryption \
+  --query "Parameter.Value" \
+  --output text > ~/.ssh/finishline-dev-key.pem
+
+# Set permissions
+chmod 400 ~/.ssh/finishline-dev-key.pem
+```
 
 **Verification:** Ensure `finishline-dev-key.pem` is created in your `environments/dev/` directory.
 
@@ -1019,6 +1182,17 @@ terragrunt apply
 | **Expire After**         | `720h (30 days)`                | Node expiration                |
 | **Detailed Monitoring**  | `false`                         | CloudWatch detailed monitoring |
 | **Interruption Queue**   | Not configured                  | SQS for spot interruption      |
+
+**EKS Readiness Gate (Monolithic Dev Special):**
+
+> [!IMPORTANT]
+> **DevOps Masterclass: The API Race Condition Mitigation**
+> **Concept:** When creating a monolithic infrastructure stack, the EKS control plane API and OIDC issuer may take up to 2-3 minutes _after_ the Terraform resource shows "Created" before they are truly interactive via Kubernetes providers (Helm/Kubectl).
+>
+> **The Solution:** We implement a **120-second Readiness Gate** (`time_sleep.eks_readiness_gate`) in the `composition/dev` module. This gate forces Karpenter to wait until the EKS API is fully functional before attempting to install the Helm chart or CRDs, preventing "Connection Refused" errors during the initial bootstrap.
+
+**Karpenter CRDs & Management:**
+Karpenter 1.0.8 manages its own CRDs via the Helm chart (`skip_crds = false`). We have standardized on this approach to ensure that the API definitions (NodePool, EC2NodeClass) are always in sync with the controller version.
 
 **Karpenter CRDs Installed:**
 | CRD | Purpose | API Group |
@@ -1530,7 +1704,7 @@ terragrunt run-all apply
 
 | Configuration                 | Dev                                                     | Stage                                                   | Prod                                                    |
 | :---------------------------- | :------------------------------------------------------ | :------------------------------------------------------ | :------------------------------------------------------ |
-| **EKS Version**               | 1.35                                                    | 1.30                                                    | 1.30                                                    |
+| **EKS Version**               | 1.31                                                    | 1.31                                                    | 1.31                                                    |
 | **Endpoint Public Access**    | ✅ Enabled                                              | ❌ Disabled                                             | ❌ Disabled                                             |
 | **Endpoint Private Access**   | ✅ Enabled                                              | ✅ Enabled                                              | ✅ Enabled                                              |
 | **Node Group Size**           | 2 nodes                                                 | 3 nodes                                                 | 3 nodes                                                 |
@@ -1553,7 +1727,7 @@ terragrunt run-all apply
 | **ALB Health Check Interval** | 5 seconds                                               | 5 seconds                                               | 5 seconds                                               |
 
 > [!NOTE]
-> **Stage and Prod environments use a modular Terragrunt structure** with separate `terragrunt.hcl` files for each module (networking, security, compute), while **Dev uses a monolithic composition approach** via the `composition/dev` module for simplicity and faster iteration.
+> **Unified Modular Architecture:** All environments (Dev, Stage, and Prod) follow a standardized modular Terragrunt structure with separate `terragrunt.hcl` files for each module (networking, security, compute). This ensures total consistency and allows for a true "Build Once, Promote Everywhere" DevSecOps workflow.
 
 > [!IMPORTANT]
 > **Production Hardening Requirements:**
@@ -1593,9 +1767,97 @@ Ensure all traffic and modifications are logged for legal and security audits.
 - Enable **ALB Access Logs** to capture HTTP/S request headers.
 - Store all logs in a restricted S3 bucket with Lifecycle Policies.
 
+=======================================================
+
+# **Operations & Troubleshooting**
+
+=======================================================
+
+## Part 7: Trunk-Based Development (TBD) Workflow with Karpenter
+
+**Goal:** Implement a High-Velocity, Infrastructure-as-Code (IaC) delivery pipeline using Trunk-Based Development. 
+
+> [!NOTE]
+> **DevOps 101: What is "Trunk-Based Development" (TBD)?**
+> Imagine a tree. The **Trunk** is your `main` branch—it is the strong, single source of life for the whole tree. In TBD, we don't create "Living Branches" (like a `dev` branch that lives for months and slowly becomes different from `prod`). 
+> instead, we make **Short-Lived Feature Branches** that merge back into the Trunk as fast as possible. This prevents "Configuration Drift," where your environments stop matching each other.
+
+### Why use TBD for Karpenter?
+Karpenter is dynamic. One day you might need `t3.medium` instances, and the next day your team might launch a massive AI workload that needs `g4dn.xlarge` GPU instances. TBD allows you to:
+1.  **Test the Scaling Logic** in `dev` first.
+2.  **Peer Review** the change via a Pull Request (PR).
+3.  **Promote with Confidence** knowing that what worked in `dev` is exactly what will run in `prod`.
+
 ---
 
-## Part 6: Operations & Troubleshooting
+### The Step-by-Step TBD Workflow
+
+#### Step 1: Sync Your Trunk & Branch Out
+Before you touch a single line of code, ensure your "Trunk" is fresh. Never branch off an old version of `main`.
+
+```bash
+git checkout main
+git pull origin main
+
+# Create a "Feature Branch" - give it a descriptive name!
+git checkout -b feature/scale-up-karpenter-for-video-app
+```
+
+#### Step 2: Make the "Atomic Change"
+An **Atomic Change** is the smallest possible update that achieves your goal. Open your `dev` environment file and adjust the Karpenter limits.
+
+**File:** `terraform/environments/dev/compute/karpenter/terragrunt.hcl`
+
+```hcl
+# ...
+karpenter_max_cpu = 100  # We are moving from 50 to 100 to handle the new app
+karpenter_instance_types = ["t3.medium", "t3.large", "c5.xlarge"] # Adding c5.xlarge for power
+# ...
+```
+
+#### Step 3: Local "Apply & Verify" (The Sandbox)
+Since this is the `dev` environment, this is your sandbox to fail safely.
+
+```bash
+cd terraform/environments/dev/compute/karpenter
+terragrunt apply
+```
+
+**The Junior DevOps Pro-Tip:** Don't just trust the green text. Run the health check script to see if Karpenter actually "sees" the new limits:
+```bash
+../../../../scripts/verify-karpenter.sh
+```
+
+#### Step 4: Merge Request (The Safety Gate)
+Once you're happy, push your branch. This triggers a **Pull Request (PR)**. In a professional team, your manager or a senior engineer will review your code here.
+
+```bash
+git add .
+git commit -m "feat(karpenter): increase CPU limits to 100 for dev scale test"
+git push origin feature/scale-up-karpenter-for-video-app
+```
+
+#### Step 5: The "Merge-to-Main" Celebration
+When the PR is approved and merged into `main`:
+1.  **The Trunk is Updated:** `main` now officially requires 100 CPUs for Karpenter.
+2.  **Continuous Deployment (CD):** In a real pipeline, an automated tool (like GitHub Actions) would now automatically `apply` this change across all environments.
+3.  **Clean Up:** Delete your feature branch. It has served its purpose!
+
+---
+
+
+**CI/CD Pipeline Note:** In a mature TBD setup, GitHub Actions or GitLab CI will run `terragrunt plan` for all environments in the PR to ensure no breaking changes are introduced.
+
+#### Step 5: Merge & Automatic Promotion
+
+Once the PR is merged into `main`, the "Trunk" is updated.
+
+- **Auto-Promotion:** The CI system automatically applies the change to `dev`.
+- **Manual Promotion (Stage/Prod):** After successful `dev` validation on the trunk, you promote the code to `stage` or `prod` by applying the updated variables in their respective modular directories.
+
+---
+
+## Part 8: Operation & Troubleshooting (Continued)
 
 Maintenance is 90% of a DevOps engineer's life. These playbooks ensure the infrastructure stays healthy and clean.
 
@@ -1612,6 +1874,43 @@ kubectl get pods -A --field-selector=status.phase=Pending
 
 # 3. Check ALB Target Health
 aws elbv2 describe-target-health --target-group-arn <TARGET_GROUP_ARN>
+```
+
+### Step 10.1: Quick AWS Resource Assessment (CLI)
+
+Use these commands to quickly assess what "programs" and resources are currently active in your account.
+
+#### 1. The "Big Picture" (Resource Explorer)
+If enabled, this finds everything across all regions:
+```bash
+aws resource-explorer-2 search --query-string "region:us-east-1"
+```
+
+#### 2. Compute & Containers
+```bash
+# List all EKS clusters
+aws eks list-clusters
+
+# List RUNNING EC2 instances only
+aws ec2 describe-instances \
+    --filters "Name=instance-state-name,Values=running" \
+    --query "Reservations[*].Instances[*].{ID:InstanceId,Type:InstanceType,Name:Tags[?Key=='Name']|[0].Value}" \
+    --output table
+
+# List Lambda Functions
+aws lambda list-functions --query "Functions[*].FunctionName"
+```
+
+#### 3. Networking & Databases
+```bash
+# List Load Balancers (ALB/NLB)
+aws elbv2 describe-load-balancers --query "LoadBalancers[*].{Name:LoadBalancerName,DNS:DNSName,Type:Type}"
+
+# List RDS Databases
+aws rds describe-db-instances --query "DBInstances[*].{Identifier:DBInstanceIdentifier,Status:DBInstanceStatus,Engine:Engine}"
+
+# List S3 Buckets
+aws s3 ls
 ```
 
 ### Step 11: Infrastructure Decommissioning (Destroy)
@@ -1693,6 +1992,105 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 - Detailed logging with color-coded output
 - Environment validation
 - Execution time tracking
+
+---
+
+### Step 13: Recovering from Stuck EKS Node Groups
+
+**Problem:** Your EKS Node Group is stuck in `CREATE_FAILED` or `DEGRADED` because of a quota issue (like Fleet Request limits) or invalid configuration. Even after fixing the code, Terragrunt continues to report the old error because the "record" of the failure still exists in AWS.
+
+**Terminal Fix Strategy:**
+
+1.  **Check the failure reason:**
+    See exactly what AWS is reporting under the hood:
+    ```bash
+    aws eks describe-nodegroup \
+      --cluster-name finishline-infra-app-dev-eks \
+      --nodegroup-name default-nodegroup \
+      --query 'nodegroup.{status:status, health:health}'
+    ```
+
+2.  **Delete the failed record:**
+    AWS prevents recreating a resource with the same name if a failed record still exists. Removing it resets the "state" in AWS:
+    ```bash
+    aws eks delete-nodegroup \
+      --cluster-name finishline-infra-app-dev-eks \
+      --nodegroup-name default-nodegroup
+    ```
+
+3.  **Wait for the cleanup:**
+    Terragrunt will fail with "resource already exists" if you run it while the deletion is still in progress. Use this command to block until it's safe.
+    ```bash
+    aws eks wait nodegroup-deleted \
+      --cluster-name finishline-infra-app-dev-eks \
+      --nodegroup-name default-nodegroup
+    ```
+
+4.  **Re-deploy:**
+    ```bash
+    # Re-apply correctly this time (now using ON_DEMAND)
+    cd terraform/environments/dev/compute/eks
+    terragrunt apply
+    ```
+
+---
+
+### Step 14: Provisioning MySQL Persistence
+
+**Goal:** Establish a secure, scalable MySQL database for the FinishLine application.
+
+#### 14.1 Option A: Local Helm Deployment (Dev Only)
+For rapid development, we use the Bitnami MySQL chart within the EKS cluster.
+
+1.  **Create a Dedicated Namespace:**
+    ```bash
+    kubectl create ns database
+    ```
+
+2.  **Establish Secure Credentials:**
+    Generate a strong password and save it as a Kubernetes Secret.
+    ```bash
+    export DB_PASSWORD=$(openssl rand -base64 16)
+    kubectl create secret generic mysql-pass --from-literal=mysql-root-password=$DB_PASSWORD -n database
+    ```
+
+3.  **Deploy the Helm Chart:**
+    ```bash
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm install finishline-db bitnami/mysql \
+      --namespace database \
+      --set auth.existingSecret=mysql-pass \
+      --set primary.persistence.size=10Gi
+    ```
+
+#### 14.2 Option B: AWS RDS Managed Database (Prod Ready)
+For Production, we use a separate Terraform module to provision an Amazon RDS instance.
+
+1.  **Security Rule Audit:**
+    Ensure your `networking/sg` module has the following rule enabled:
+    ```hcl
+    {
+      description = "MySQL - VPC internal only"
+      from_port   = 3306
+      to_port     = 3306
+      protocol    = "tcp"
+      cidr_blocks = ["10.0.0.0/16"] # Restricted to VPC CIDR
+    }
+    ```
+
+2.  **Database Connection String:**
+    Once applied, retrieve the endpoint from the outputs:
+    ```bash
+    aws rds describe-db-instances --query 'DBInstances[*].Endpoint.Address'
+    ```
+
+#### 14.3 Connection Verification
+Test the reachability from the Jumphost:
+```bash
+# 1. Connect to Jumphost via SSM or SSH
+# 2. Test SQL Connectivity
+telnet <DB_ENDPOINT> 3306
+```
 
 ---
 
@@ -1824,10 +2222,10 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 
 | Endpoint | Type      | Purpose                                        | Private Link |
 | :------- | :-------- | :--------------------------------------------- | :----------- |
-| **EKS**  | Interface | Private EKS API access without internet        | ✅           |
-| **STS**  | Interface | Secure token service for IAM role assumption   | ✅           |
-| **EC2**  | Interface | Private EC2 API access for instance management | ✅           |
-| **S3**   | Gateway   | Private S3 access via Gateway VPC Endpoint     | ✅ (Gateway) |
+| **EKS**  | Interface | Private EKS API access without internet        | ✅            |
+| **STS**  | Interface | Secure token service for IAM role assumption   | ✅            |
+| **EC2**  | Interface | Private EC2 API access for instance management | ✅            |
+| **S3**   | Gateway   | Private S3 access via Gateway VPC Endpoint     | ✅ (Gateway)  |
 
 **VPC Endpoint Security:**
 
