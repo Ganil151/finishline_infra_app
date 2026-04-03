@@ -24,6 +24,8 @@ resource "aws_lb" "finishline_alb" {
   tags = merge(var.common_tags, {
     Name = "${var.project_name}-${var.environment}-alb"
   })
+
+  depends_on = [aws_s3_bucket_policy.alb_access_logs]
 }
 #========================================================================
 #                 *** ALB Target Group Configuration ***

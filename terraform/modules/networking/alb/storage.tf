@@ -1,4 +1,11 @@
 #========================================================================
+#              *** ALB Service Account & Logging Support ***
+#========================================================================
+data "aws_elb_service_account" "main" {}
+
+data "aws_caller_identity" "current" {}
+
+#========================================================================
 #              *** S3 Bucket Policy for ALB Access Logs ***
 #========================================================================
 resource "aws_s3_bucket_policy" "alb_access_logs" {
@@ -12,7 +19,7 @@ resource "aws_s3_bucket_policy" "alb_access_logs" {
         Sid    = "ALBWriteAccess"
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+          AWS = data.aws_elb_service_account.main.arn
         }
         Action   = "s3:PutObject"
         Resource = "arn:aws:s3:::${var.access_logs_s3_bucket}/${var.access_logs_s3_prefix}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
@@ -43,5 +50,3 @@ resource "aws_s3_bucket_policy" "alb_access_logs" {
     ]
   })
 }
-
-data "aws_caller_identity" "current" {}

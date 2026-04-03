@@ -2413,14 +2413,87 @@ telnet <DB_ENDPOINT> 3306
 
 #### ALB/Networking Errors
 
-| Error                         | Cause                                     | Fix                                                                                         |
-| :---------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------------ |
-| `Target unhealthy`            | Health checks failing on target instances | Check security groups allow ALB health check traffic                                        |
-| `No registered targets`       | Target group has no healthy instances     | Verify instances are in correct subnet and security group                                   |
-| `Listener not configured`     | ALB listener missing or misconfigured     | Check ALB module configuration and listener rules                                           |
-| `DNS resolution failed`       | Route53 or DNS misconfiguration           | Verify VPC DNS settings and Route53 records                                                 |
-| `Access Denied for bucket`    | S3 bucket policy missing for ALB logs     | ALB module auto-creates bucket policy; verify bucket exists and `enable_access_logs = true` |
-| `InvalidConfigurationRequest` | ALB access logs S3 permissions issue      | Check S3 bucket policy has `delivery.logs.amazonaws.com` service principal access           |
+| Error                         | Cause                                        | Fix                                                                                         |
+| :---------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------------ |
+| `Target unhealthy`            | Health checks failing on target instances    | Check security groups allow ALB health check traffic                                        |
+| `No registered targets`       | Target group has no healthy instances        | Verify instances are in correct subnet and security group                                   |
+| `Listener not configured`     | ALB listener missing or misconfigured        | Check ALB module configuration and listener rules                                           |
+| `DNS resolution failed`       | Route53 or DNS misconfiguration              | Verify VPC DNS settings and Route53 records                                                 |
+| `Access Denied for bucket`    | S3 bucket policy missing for ALB logs        | ALB module auto-creates bucket policy; verify bucket exists and `enable_access_logs = true` |
+| `InvalidConfigurationRequest` | ALB access logs S3 permissions issue         | Check S3 bucket policy has `delivery.logs.amazonaws.com` service principal access           |
+| `already exists`              | ALB exists in AWS but not in Terraform state | Delete existing ALB from AWS or import it into Terraform state                              |
+
+**ALB "Already Exists" Error Resolution:**
+
+When you encounter `Error: ELBv2 Load Balancer (finishline-infra-app-dev-alb) already exists`, it means the ALB was created outside of Terraform (manual creation, previous failed apply, etc.) but isn't tracked in your Terraform state.
+
+**Option 1: Delete and Recreate (Recommended for Fresh Setups)**
+
+This approach removes the existing ALB and lets Terraform recreate it with proper state tracking:
+
+```bash
+# 1. Get the ALB ARN
+aws elbv2 describe-load-balancers \
+    --names finishline-infra-app-dev-alb \
+    --query "LoadBalancers[0].LoadBalancerArn" \
+    --output text
+
+# 2. Delete the existing ALB (this also deletes attached listeners)
+aws elbv2 delete-load-balancer \
+    --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:365269738775:loadbalancer/app/finishline-infra-app-dev-alb/f2929479433f4d88
+
+# 3. Wait for deletion to complete (ALBs take 2-5 minutes)
+# Check until you get "LoadBalancerNotFound"
+aws elbv2 describe-load-balancers \
+    --names finishline-infra-app-dev-alb
+
+# 4. Delete the target group (if it exists)
+aws elbv2 describe-target-groups \
+    --names finishline-infra-app-dev-alb-tg \
+    --query "TargetGroups[0].TargetGroupArn" \
+    --output text
+
+aws elbv2 delete-target-group \
+    --target-group-arn arn:aws:elasticloadbalancing:us-east-1:365269738775:targetgroup/finishline-infra-app-dev-alb-tg/xxxxxxxxxxxxxxxx
+
+# 5. Verify deletion is complete
+aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb
+# Expected error: "LoadBalancerNotFound"
+
+# 6. Re-run Terragrunt to create fresh ALB
+cd terraform/environments/dev/networking/alb
+terragrunt apply
+```
+
+**Option 2: Import Existing ALB into Terraform State**
+
+If you want to keep the existing ALB and bring it under Terraform management:
+
+```bash
+# 1. Navigate to ALB module
+cd terraform/environments/dev/networking/alb
+
+# 2. Import the ALB
+terragrunt import aws_lb.finishline_alb arn:aws:elasticloadbalancing:us-east-1:365269738775:loadbalancer/app/finishline-infra-app-dev-alb/f2929479433f4d88
+
+# 3. Import the target group (get ARN from AWS Console)
+terragrunt import aws_lb_target_group.finishline_alb_tg arn:aws:elasticloadbalancing:us-east-1:365269738775:targetgroup/finishline-infra-app-dev-alb-tg/xxxxxxxxxxxxxxxx
+
+# 4. Import the listener (get ARN from AWS Console)
+terragrunt import aws_lb_listener.finishline_alb_listener arn:aws:elasticloadbalancing:us-east-1:365269738775:listener/app/finishline-infra-app-dev-alb/f2929479433f4d88/xxxxxxxxxxxxxxxx
+
+# 5. Verify state
+terragrunt state list
+
+# 6. Run plan to see if configuration matches
+terragrunt plan
+```
+
+> [!WARNING]
+> **Import vs Delete Decision Guide:**
+>
+> - **Delete & Recreate**: Best for fresh setups, dev environments, or when the existing ALB has no traffic
+> - **Import**: Best for production environments with active traffic, or when you can't afford downtime
 
 **ALB Access Logs Troubleshooting:**
 
@@ -2433,6 +2506,11 @@ If you encounter `InvalidConfigurationRequest: Access Denied for bucket`:
    - `LogDeliveryRead` - Allows AWS log delivery to read bucket ACL
 3. **Verify bucket name**: Ensure the bucket name in `terragrunt.hcl` matches your actual S3 bucket
 4. **Check AWS account ID**: The bucket policy uses `data.aws_caller_identity.current.account_id` automatically
+5. **Dependency Order**: The ALB module has `depends_on = [aws_s3_bucket_policy.alb_access_logs]` to ensure the bucket policy is created before the ALB tries to use it
+
+> [!NOTE]
+> **Why the dependency matters:**
+> The ALB must have the S3 bucket policy in place **before** it can enable access logs. The `depends_on` ensures Terraform creates the policy first. If you still get permission errors, the bucket policy may have failed to apply - check the Terraform output for any `aws_s3_bucket_policy` errors.
 
 ```bash
 # Verify S3 bucket exists
