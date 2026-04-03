@@ -106,9 +106,9 @@ output "public_route_table_id" {
   value       = aws_route_table.finishline_public_route_table.id
 }
 
-output "private_route_table_id" {
-  description = "The ID of the private route table"
-  value       = aws_route_table.finishline_private_route_table.id
+output "private_route_table_ids" {
+  description = "List of IDs of the private route tables"
+  value       = aws_route_table.finishline_private_route_table[*].id
 }
 
 #========================================================================

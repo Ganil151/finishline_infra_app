@@ -145,7 +145,7 @@ terraform/
 │   ├── networking/                   # Reusable network resources
 │   │   ├── vpc/                      # Core VPC & Subnets
 │   │   ├── sg/                       # Centralized Firewalls
-│   │   └── alb/                      # External Load Balancers
+│   │   └── alb/                      # External Load Balancers (with S3 bucket policy)
 │   └── security/                     # Reusable security resources
 │       ├── iam/                      # Roles for EKS & IRSA
 │       └── key_pair/                 # SSH Keys with Auto-Copy
@@ -629,6 +629,7 @@ terragrunt apply
 cd ../jumphost
 terragrunt apply
 ```
+
 **Project Status:** The ALB module is currently only configured for the **dev environment** via the `composition/dev` monolithic module. Stage and Prod ALB configurations are placeholders (empty `terragrunt.hcl` files) and need to be implemented.
 
 ```bash
@@ -761,13 +762,70 @@ aws elbv2 describe-tags \
     --resource-arns $(aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb --query "LoadBalancers[0].Arn" --output text)
 ```
 
-**ALB Access Logs (Optional):**
+**ALB Access Logs:**
+
+Access logs are automatically enabled when `enable_access_logs = true` in the ALB Terragrunt configuration. The module automatically creates the required S3 bucket policy with the following permissions:
+
+1. **ALBWriteAccess** - Allows ALB to write access logs to the specified S3 prefix
+2. **LogDeliveryWrite** - Allows AWS log delivery service to write objects with proper ACL
+3. **LogDeliveryRead** - Allows AWS log delivery service to read bucket ACL
+
+**S3 Bucket Policy (Auto-Generated):**
+
+```json
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "ALBWriteAccess",
+			"Effect": "Allow",
+			"Principal": { "AWS": "arn:aws:iam::<ACCOUNT_ID>:root" },
+			"Action": "s3:PutObject",
+			"Resource": "arn:aws:s3:::<BUCKET_NAME>/<PREFIX>/AWSLogs/<ACCOUNT_ID>/*"
+		},
+		{
+			"Sid": "LogDeliveryWrite",
+			"Effect": "Allow",
+			"Principal": { "Service": "delivery.logs.amazonaws.com" },
+			"Action": "s3:PutObject",
+			"Resource": "arn:aws:s3:::<BUCKET_NAME>/<PREFIX>/AWSLogs/<ACCOUNT_ID>/*",
+			"Condition": {
+				"StringEquals": { "s3:x-amz-acl": "bucket-owner-full-control" }
+			}
+		},
+		{
+			"Sid": "LogDeliveryRead",
+			"Effect": "Allow",
+			"Principal": { "Service": "delivery.logs.amazonaws.com" },
+			"Action": "s3:GetBucketAcl",
+			"Resource": "arn:aws:s3:::<BUCKET_NAME>"
+		}
+	]
+}
+```
+
+**Required S3 Bucket Permissions:**
+| Action | Principal | Resource | Purpose |
+| :--- | :--- | :--- | :--- |
+| `s3:PutObject` | ALB Service Role | `<bucket>/<prefix>/AWSLogs/<account>/*` | ALB writes access logs |
+| `s3:PutObject` | `delivery.logs.amazonaws.com` | `<bucket>/<prefix>/AWSLogs/<account>/*` | Log delivery writes with ACL |
+| `s3:GetBucketAcl` | `delivery.logs.amazonaws.com` | `<bucket>` | Log delivery reads bucket ACL |
+
+**Verify Access Logs:**
 
 ```bash
-# Enable access logs to S3 bucket
-aws elbv2 modify-load-balancer-attributes \
-    --load-balancer-arn <ALB_ARN> \
-    --attributes Key=access_logs.s3.enabled,Value=true Key=access_logs.s3.bucket,Value=<BUCKET_NAME> Key=access_logs.s3.prefix,Value=alb-logs
+# Check if access logs are enabled
+aws elbv2 describe-load-balancer-attributes \
+    --load-balancer-arn $(aws elbv2 describe-load-balancers \
+        --names finishline-infra-app-dev-alb \
+        --query "LoadBalancers[0].LoadBalancerArn" --output text) \
+    --query "Attributes[?Key=='access_logs.s3.enabled']"
+
+# Check S3 bucket for access logs
+aws s3 ls s3://finishline-infra-app-e534d5ea/alb-access-logs/
+
+# Check S3 bucket policy
+aws s3api get-bucket-policy --bucket finishline-infra-app-e534d5ea --output text --query Policy
 ```
 
 **ALB Security Group Rules Required:**
@@ -1775,15 +1833,17 @@ Ensure all traffic and modifications are logged for legal and security audits.
 
 ## Part 7: Trunk-Based Development (TBD) Workflow with Karpenter
 
-**Goal:** Implement a High-Velocity, Infrastructure-as-Code (IaC) delivery pipeline using Trunk-Based Development. 
+**Goal:** Implement a High-Velocity, Infrastructure-as-Code (IaC) delivery pipeline using Trunk-Based Development.
 
 > [!NOTE]
 > **DevOps 101: What is "Trunk-Based Development" (TBD)?**
-> Imagine a tree. The **Trunk** is your `main` branch—it is the strong, single source of life for the whole tree. In TBD, we don't create "Living Branches" (like a `dev` branch that lives for months and slowly becomes different from `prod`). 
+> Imagine a tree. The **Trunk** is your `main` branch—it is the strong, single source of life for the whole tree. In TBD, we don't create "Living Branches" (like a `dev` branch that lives for months and slowly becomes different from `prod`).
 > instead, we make **Short-Lived Feature Branches** that merge back into the Trunk as fast as possible. This prevents "Configuration Drift," where your environments stop matching each other.
 
 ### Why use TBD for Karpenter?
+
 Karpenter is dynamic. One day you might need `t3.medium` instances, and the next day your team might launch a massive AI workload that needs `g4dn.xlarge` GPU instances. TBD allows you to:
+
 1.  **Test the Scaling Logic** in `dev` first.
 2.  **Peer Review** the change via a Pull Request (PR).
 3.  **Promote with Confidence** knowing that what worked in `dev` is exactly what will run in `prod`.
@@ -1793,6 +1853,7 @@ Karpenter is dynamic. One day you might need `t3.medium` instances, and the next
 ### The Step-by-Step TBD Workflow
 
 #### Step 1: Sync Your Trunk & Branch Out
+
 Before you touch a single line of code, ensure your "Trunk" is fresh. Never branch off an old version of `main`.
 
 ```bash
@@ -1804,6 +1865,7 @@ git checkout -b feature/scale-up-karpenter-for-video-app
 ```
 
 #### Step 2: Make the "Atomic Change"
+
 An **Atomic Change** is the smallest possible update that achieves your goal. Open your `dev` environment file and adjust the Karpenter limits.
 
 **File:** `terraform/environments/dev/compute/karpenter/terragrunt.hcl`
@@ -1816,6 +1878,7 @@ karpenter_instance_types = ["t3.medium", "t3.large", "c5.xlarge"] # Adding c5.xl
 ```
 
 #### Step 3: Local "Apply & Verify" (The Sandbox)
+
 Since this is the `dev` environment, this is your sandbox to fail safely.
 
 ```bash
@@ -1824,11 +1887,13 @@ terragrunt apply
 ```
 
 **The Junior DevOps Pro-Tip:** Don't just trust the green text. Run the health check script to see if Karpenter actually "sees" the new limits:
+
 ```bash
 ../../../../scripts/verify-karpenter.sh
 ```
 
 #### Step 4: Merge Request (The Safety Gate)
+
 Once you're happy, push your branch. This triggers a **Pull Request (PR)**. In a professional team, your manager or a senior engineer will review your code here.
 
 ```bash
@@ -1838,13 +1903,14 @@ git push origin feature/scale-up-karpenter-for-video-app
 ```
 
 #### Step 5: The "Merge-to-Main" Celebration
+
 When the PR is approved and merged into `main`:
+
 1.  **The Trunk is Updated:** `main` now officially requires 100 CPUs for Karpenter.
 2.  **Continuous Deployment (CD):** In a real pipeline, an automated tool (like GitHub Actions) would now automatically `apply` this change across all environments.
 3.  **Clean Up:** Delete your feature branch. It has served its purpose!
 
 ---
-
 
 **CI/CD Pipeline Note:** In a mature TBD setup, GitHub Actions or GitLab CI will run `terragrunt plan` for all environments in the PR to ensure no breaking changes are introduced.
 
@@ -1881,12 +1947,15 @@ aws elbv2 describe-target-health --target-group-arn <TARGET_GROUP_ARN>
 Use these commands to quickly assess what "programs" and resources are currently active in your account.
 
 #### 1. The "Big Picture" (Resource Explorer)
+
 If enabled, this finds everything across all regions:
+
 ```bash
 aws resource-explorer-2 search --query-string "region:us-east-1"
 ```
 
 #### 2. Compute & Containers
+
 ```bash
 # List all EKS clusters
 aws eks list-clusters
@@ -1902,6 +1971,7 @@ aws lambda list-functions --query "Functions[*].FunctionName"
 ```
 
 #### 3. Networking & Databases
+
 ```bash
 # List Load Balancers (ALB/NLB)
 aws elbv2 describe-load-balancers --query "LoadBalancers[*].{Name:LoadBalancerName,DNS:DNSName,Type:Type}"
@@ -1932,7 +2002,64 @@ terragrunt run-all destroy
 
 **Problem:** Standard `aws s3 rm` does not delete versioned objects. If versioning is enabled (Step 0), the bucket will fail to delete even if it "looks" empty.
 
-**The Nuclear Option (Manual Cleanup):**
+#### Deleting a Specific State File
+
+To delete a specific Terraform state file from the S3 bucket:
+
+```bash
+# Delete a specific state file
+aws s3 rm s3://finishline-infra-app-e534d5ea/environments/dev/networking/vpc/terraform.tfstate --region us-east-1
+
+# Verify it's gone
+aws s3 ls s3://finishline-infra-app-e534d5ea/environments/dev/networking/vpc/ --region us-east-1
+```
+
+> [!WARNING]
+> **State File Deletion Impact:** Deleting a state file will cause Terraform to lose track of all resources managed by that module. On next `apply`, it will attempt to recreate everything. Always run `terragrunt destroy` first if your intent is to decommission resources.
+
+#### Listing All State Files
+
+To view all Terraform state files stored in the S3 bucket:
+
+```bash
+# List all state files in the bucket
+aws s3 ls s3://finishline-infra-app-e534d5ea/ --recursive --region us-east-1
+
+# List state files for a specific environment (dev)
+aws s3 ls s3://finishline-infra-app-e534d5ea/environments/dev/ --recursive --region us-east-1
+
+# List state files for a specific environment (stage)
+aws s3 ls s3://finishline-infra-app-e534d5ea/environments/stage/ --recursive --region us-east-1
+
+# List state files for a specific environment (prod)
+aws s3 ls s3://finishline-infra-app-e534d5ea/environments/prod/ --recursive --region us-east-1
+```
+
+**Example Output:**
+
+```
+2026-04-02 21:30:45     12345 environments/dev/networking/vpc/terraform.tfstate
+2026-04-02 21:35:12     23456 environments/dev/compute/eks/terraform.tfstate
+2026-04-02 21:40:33     34567 environments/dev/security/iam/terraform.tfstate
+```
+
+#### Listing State File Versions
+
+If versioning is enabled, you can view all versions of a specific state file:
+
+```bash
+# List all versions of a specific state file
+aws s3api list-object-versions \
+    --bucket finishline-infra-app-e534d5ea \
+    --prefix environments/dev/networking/vpc/terraform.tfstate \
+    --region us-east-1 \
+    --query "Versions[*].{VersionId: VersionId, LastModified: LastModified, Size: Size, IsLatest: IsLatest}" \
+    --output table
+```
+
+#### The Nuclear Option (Manual Cleanup):
+
+Use this when you need to delete ALL objects from the bucket (e.g., before deleting the bucket itself):
 
 ```bash
 # 1. List all object versions (Saved to file)
@@ -2003,6 +2130,7 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 
 1.  **Check the failure reason:**
     See exactly what AWS is reporting under the hood:
+
     ```bash
     aws eks describe-nodegroup \
       --cluster-name finishline-infra-app-dev-eks \
@@ -2012,6 +2140,7 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 
 2.  **Delete the failed record:**
     AWS prevents recreating a resource with the same name if a failed record still exists. Removing it resets the "state" in AWS:
+
     ```bash
     aws eks delete-nodegroup \
       --cluster-name finishline-infra-app-dev-eks \
@@ -2020,6 +2149,7 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 
 3.  **Wait for the cleanup:**
     Terragrunt will fail with "resource already exists" if you run it while the deletion is still in progress. Use this command to block until it's safe.
+
     ```bash
     aws eks wait nodegroup-deleted \
       --cluster-name finishline-infra-app-dev-eks \
@@ -2040,15 +2170,18 @@ The [`terraform/scripts/run-all.sh`](terraform/scripts/run-all.sh) script provid
 **Goal:** Establish a secure, scalable MySQL database for the FinishLine application.
 
 #### 14.1 Option A: Local Helm Deployment (Dev Only)
+
 For rapid development, we use the Bitnami MySQL chart within the EKS cluster.
 
 1.  **Create a Dedicated Namespace:**
+
     ```bash
     kubectl create ns database
     ```
 
 2.  **Establish Secure Credentials:**
     Generate a strong password and save it as a Kubernetes Secret.
+
     ```bash
     export DB_PASSWORD=$(openssl rand -base64 16)
     kubectl create secret generic mysql-pass --from-literal=mysql-root-password=$DB_PASSWORD -n database
@@ -2064,10 +2197,12 @@ For rapid development, we use the Bitnami MySQL chart within the EKS cluster.
     ```
 
 #### 14.2 Option B: AWS RDS Managed Database (Prod Ready)
+
 For Production, we use a separate Terraform module to provision an Amazon RDS instance.
 
 1.  **Security Rule Audit:**
     Ensure your `networking/sg` module has the following rule enabled:
+
     ```hcl
     {
       description = "MySQL - VPC internal only"
@@ -2085,7 +2220,9 @@ For Production, we use a separate Terraform module to provision an Amazon RDS in
     ```
 
 #### 14.3 Connection Verification
+
 Test the reachability from the Jumphost:
+
 ```bash
 # 1. Connect to Jumphost via SSM or SSH
 # 2. Test SQL Connectivity
@@ -2222,10 +2359,10 @@ telnet <DB_ENDPOINT> 3306
 
 | Endpoint | Type      | Purpose                                        | Private Link |
 | :------- | :-------- | :--------------------------------------------- | :----------- |
-| **EKS**  | Interface | Private EKS API access without internet        | ✅            |
-| **STS**  | Interface | Secure token service for IAM role assumption   | ✅            |
-| **EC2**  | Interface | Private EC2 API access for instance management | ✅            |
-| **S3**   | Gateway   | Private S3 access via Gateway VPC Endpoint     | ✅ (Gateway)  |
+| **EKS**  | Interface | Private EKS API access without internet        | ✅           |
+| **STS**  | Interface | Secure token service for IAM role assumption   | ✅           |
+| **EC2**  | Interface | Private EC2 API access for instance management | ✅           |
+| **S3**   | Gateway   | Private S3 access via Gateway VPC Endpoint     | ✅ (Gateway) |
 
 **VPC Endpoint Security:**
 
@@ -2276,12 +2413,43 @@ telnet <DB_ENDPOINT> 3306
 
 #### ALB/Networking Errors
 
-| Error                     | Cause                                     | Fix                                                       |
-| :------------------------ | :---------------------------------------- | :-------------------------------------------------------- |
-| `Target unhealthy`        | Health checks failing on target instances | Check security groups allow ALB health check traffic      |
-| `No registered targets`   | Target group has no healthy instances     | Verify instances are in correct subnet and security group |
-| `Listener not configured` | ALB listener missing or misconfigured     | Check ALB module configuration and listener rules         |
-| `DNS resolution failed`   | Route53 or DNS misconfiguration           | Verify VPC DNS settings and Route53 records               |
+| Error                         | Cause                                     | Fix                                                                                         |
+| :---------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------------ |
+| `Target unhealthy`            | Health checks failing on target instances | Check security groups allow ALB health check traffic                                        |
+| `No registered targets`       | Target group has no healthy instances     | Verify instances are in correct subnet and security group                                   |
+| `Listener not configured`     | ALB listener missing or misconfigured     | Check ALB module configuration and listener rules                                           |
+| `DNS resolution failed`       | Route53 or DNS misconfiguration           | Verify VPC DNS settings and Route53 records                                                 |
+| `Access Denied for bucket`    | S3 bucket policy missing for ALB logs     | ALB module auto-creates bucket policy; verify bucket exists and `enable_access_logs = true` |
+| `InvalidConfigurationRequest` | ALB access logs S3 permissions issue      | Check S3 bucket policy has `delivery.logs.amazonaws.com` service principal access           |
+
+**ALB Access Logs Troubleshooting:**
+
+If you encounter `InvalidConfigurationRequest: Access Denied for bucket`:
+
+1. **Verify S3 bucket exists**: The bucket specified in `access_logs_s3_bucket` must exist
+2. **Check bucket policy**: The ALB module automatically creates the required S3 bucket policy with:
+   - `ALBWriteAccess` - Allows ALB to write logs
+   - `LogDeliveryWrite` - Allows AWS log delivery service
+   - `LogDeliveryRead` - Allows AWS log delivery to read bucket ACL
+3. **Verify bucket name**: Ensure the bucket name in `terragrunt.hcl` matches your actual S3 bucket
+4. **Check AWS account ID**: The bucket policy uses `data.aws_caller_identity.current.account_id` automatically
+
+```bash
+# Verify S3 bucket exists
+aws s3api head-bucket --bucket finishline-infra-app-e534d5ea
+
+# Check bucket policy
+aws s3api get-bucket-policy --bucket finishline-infra-app-e534d5ea --output text
+
+# Verify ALB access logs attribute
+aws elbv2 describe-load-balancer-attributes \
+    --load-balancer-arn $(aws elbv2 describe-load-balancers \
+        --names finishline-infra-app-dev-alb \
+        --query "LoadBalancers[0].LoadBalancerArn" --output text)
+
+# Check S3 bucket for access logs
+aws s3 ls s3://finishline-infra-app-e534d5ea/alb-access-logs/
+```
 
 ### Quick Troubleshooting Commands
 

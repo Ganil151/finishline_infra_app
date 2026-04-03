@@ -39,7 +39,7 @@ variable "enable_dns_support" {
   description = "Whether to enable DNS support for the VPC"
   type        = bool
 }
-variable "enable_dns_hostnames" { 
+variable "enable_dns_hostnames" {
   description = "Whether to enable DNS hostnames for the VPC"
   type        = bool
 }
@@ -76,20 +76,24 @@ variable "map_private_ip_on_launch" {
 #_____________________*** Network ACL Variables *** ______________________
 variable "network_acl_ingress_rules" {
   description = "The ingress rules for the network ACL"
-  type        = list(object({
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
+  type = list(object({
+    rule_no    = number
+    from_port  = number
+    to_port    = number
+    protocol   = string
+    action     = string
+    cidr_block = string
   }))
 }
 variable "network_acl_egress_rules" {
   description = "The egress rules for the network ACL"
-  type        = list(object({
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
+  type = list(object({
+    rule_no    = number
+    from_port  = number
+    to_port    = number
+    protocol   = string
+    action     = string
+    cidr_block = string
   }))
 }
 variable "private_dns_enabled" {
