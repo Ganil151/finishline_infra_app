@@ -288,9 +288,9 @@ remote_state {
 
 ---
 
-## Part 3: Phase 1 - Launching Development (Dev)
+## Part 3: Architecture Deep Dive (What We Build)
 
-This phase covers the complete deployment of the `dev` environment. We follow a strict **"Networking -> Security -> Compute"** dependency chain.
+This section provides a technical deep-dive into the decoupled, modular components that make up the FinishLine environment. You do not need to deploy these manually; refer to **Part 4: Automated Infrastructure Deployment** for deployment execution strategies.
 
 ### Step 1: Network Foundation (VPC, SG, ALB)
 
@@ -300,17 +300,6 @@ This phase covers the complete deployment of the `dev` environment. We follow a 
 
 The VPC is our private segment of the AWS Cloud. It isolates your infrastructure from the internet, providing a secure boundary for your application data.
 
-```bash
-# 1. Navigate to the VPC module
-cd terraform/environments/dev/networking/vpc
-
-# 2. Initialize Terragrunt
-#    Note: This creates the local .terragrunt-cache folder.
-terragrunt init
-
-# 3. Apply the VPC Configuration
-terragrunt apply
-```
 
 > [!IMPORTANT]
 > **DevSecOps Masterclass: Regional Resilience (3-AZs)**
@@ -471,11 +460,7 @@ A Security Group (SG) is a **stateful virtual firewall** that controls inbound a
 | **finishline-dev-sg** | SSH (22) from executor IP, HTTP (80), HTTPS (443) from 0.0.0.0/0, MySQL (3306) from VPC, Kubelet (10250) from VPC | All traffic to 0.0.0.0/0 | ALB, Jumphost, EKS nodes |
 | **EKS Cluster SG**    | HTTPS (443) from VPC CIDR                                                                                         | All traffic to 0.0.0.0/0 | EKS Control Plane        |
 
-```bash
-# Navigate to the SG module
-cd ../sg
-terragrunt apply
-```
+
 
 **Verify Security Groups:**
 
@@ -555,288 +540,6 @@ An Application Load Balancer (ALB) is a **Layer 7 (Application Layer) load balan
 
 ---
 
-## Part 2: Phase 1 - Infrastructure Deployment
-
-In this phase, we build the "Foundation" of the FinishLine cloud. We deploy in a modular sequence to ensure that dependencies (like VPC and IAM) are ready before the EKS cluster is birthed.
-
-### Step 1: Networking Foundations (VPC & ALB)
-
-**Goal:** Create the private network and the entry point for internet traffic.
-
-```bash
-# 1. Deploy the VPC (Private Network, NAT, Endpoints)
-cd terraform/environments/dev/networking/vpc
-terragrunt init
-terragrunt apply
-
-# 2. Deploy Security Groups (Firewalls)
-cd ../sg
-terragrunt apply
-
-# 3. Deploy the Load Balancer (ALB)
-cd ../alb
-terragrunt apply
-```
-
-**Verification:** Ensure you can see the VPC in the AWS console with the `Project: finishline-infra-app` tag.
-
----
-
-### Step 2: Identity & Security (IAM & Key Pairs)
-
-**Goal:** Establish the permissions and credentials needed for the cluster.
-
-```bash
-# 1. Deploy the SSH Key Pair
-cd ../../security/key_pair
-terragrunt apply
-```
-
-> [!TIP]
-> **Automation Note:** You no longer need to manually copy the SSH key! Our `auto_copy` engine automatically places the `finishline-dev-key.pem` into the `environments/dev` folder for you upon a successful apply.
-
-```bash
-# 2. Deploy IAM Roles
-cd ../iam
-terragrunt apply
-```
-
-> [!WARNING]
-> **The OIDC Conflict Fix:** If you see an `EntityAlreadyExists` error for the OIDC provider, it means a previous cluster left a record behind. Run this command to fix it instantly:
-> `terragrunt import aws_iam_openid_connect_provider.eks_oidc_provider <PROVIDER_ARN>`
-
----
-
-### Step 3: Compute & EKS Cluster
-
-**Goal:** Launch the EKS cluster and the autoscaling nodes.
-
-```bash
-# 1. Deploy the EKS Cluster
-cd ../../compute/eks
-terragrunt apply
-```
-
-> [!IMPORTANT]
-> **Quota Resolution:** We have configured the `node_group_capacity_type` to **ON_DEMAND** as the default. This bypasses the common "Fleet Request Quota" errors found on new AWS accounts.
-
-```bash
-# 2. Deploy the Karpenter Autoscaler
-cd ../karpenter
-terragrunt apply
-
-# 3. Deploy the Jumphost (Bastion)
-cd ../jumphost
-terragrunt apply
-```
-
-**Project Status:** The ALB module is currently only configured for the **dev environment** via the `composition/dev` monolithic module. Stage and Prod ALB configurations are placeholders (empty `terragrunt.hcl` files) and need to be implemented.
-
-```bash
-# ============================================
-# For DEV Environment (Currently Active)
-# ============================================
-# ALB is deployed as part of the composition/dev module
-# All dev resources are deployed together
-cd terraform/environments/dev
-terragrunt init
-terragrunt apply
-
-# This single command deploys:
-# - VPC, Subnets, NAT Gateway, VPC Endpoints
-# - Security Groups
-# - ALB (Application Load Balancer)
-# - IAM Roles & Key Pair
-# - EKS Cluster & Node Group
-# - Karpenter Autoscaler
-# - Jumphost
-```
-
-**Module Dependency Order:**
-
-The ALB module (when configured) depends on:
-
-1. **VPC Module** - Provides VPC ID and subnet IDs
-2. **Security Groups Module** - Provides security group ID for ALB
-
-**Future Stage/Prod Deployment (When Configured):**
-
-```bash
-# ============================================
-# For STAGE Environment (Placeholder - Not Configured)
-# ============================================
-# Note: terragrunt.hcl files exist but are empty (0 bytes)
-# Need to configure before deployment
-cd terraform/environments/stage/networking/alb
-# TODO: Configure terragrunt.hcl with:
-#   - VPC dependency
-#   - Security Group dependency
-#   - ALB input variables
-terragrunt init
-terragrunt apply
-
-# ============================================
-# For PROD Environment (Placeholder - Not Configured)
-# ============================================
-# Note: terragrunt.hcl files exist but are empty (0 bytes)
-# Need to configure before deployment
-cd terraform/environments/prod/networking/alb
-# TODO: Configure terragrunt.hcl with:
-#   - VPC dependency
-#   - Security Group dependency
-#   - ALB input variables (production-hardened)
-terragrunt init
-terragrunt apply
-```
-
-**Recommended Deployment Order (When Stage/Prod Configured):**
-
-```bash
-# Deploy entire environment with dependency ordering
-cd terraform/environments/stage
-terragrunt run-all apply  # Deploys: vpc -> sg -> alb -> ...
-
-cd terraform/environments/prod
-terragrunt run-all apply  # Deploys: vpc -> sg -> alb -> ...
-```
-
-**Verify ALB Deployment:**
-
-```bash
-# 1. Get ALB DNS Name
-ALB_DNS=$(aws elbv2 describe-load-balancers \
-    --names finishline-infra-app-dev-alb \
-    --query "LoadBalancers[0].DNSName" \
-    --output text)
-echo "ALB DNS: $ALB_DNS"
-
-# 2. Get ALB details (scheme, type, subnets)
-aws elbv2 describe-load-balancers \
-    --names finishline-infra-app-dev-alb \
-    --query "LoadBalancers[0].{
-        DNSName: DNSName,
-        Scheme: Scheme,
-        Type: Type,
-        VpcId: VpcId,
-        Subnets: AvailabilityZards,
-        SecurityGroups: SecurityGroups,
-        CanonicalHostedZoneId: CanonicalHostedZoneId
-    }"
-
-# 3. Get Target Group details
-TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
-    --query "TargetGroups[?contains(TargetGroupName, 'finishline-infra-app-dev-alb-tg')].TargetGroupArn" \
-    --output text)
-
-aws elbv2 describe-target-groups \
-    --target-group-arns $TARGET_GROUP_ARN \
-    --query "TargetGroups[0].{
-        Name: TargetGroupName,
-        Port: Port,
-        Protocol: Protocol,
-        VpcId: VpcId,
-        HealthCheckPath: HealthCheckPath,
-        HealthCheckInterval: HealthCheckIntervalSeconds,
-        HealthyThreshold: HealthyThresholdCount,
-        UnhealthyThreshold: UnhealthyThresholdCount
-    }"
-
-# 4. Check Target Health
-aws elbv2 describe-target-health --target-group-arn $TARGET_GROUP_ARN
-
-# 5. Get Listener configuration
-LISTENER_ARN=$(aws elbv2 describe-listeners \
-    --load-balancer-arn $(aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb --query "LoadBalancers[0].Arn" --output text) \
-    --query "Listeners[0].Arn" --output text)
-
-aws elbv2 describe-listeners --listener-arns $LISTENER_ARN
-
-# 6. Test HTTP Connectivity
-curl -I http://$ALB_DNS
-
-# 7. Test with verbose output for troubleshooting
-curl -v http://$ALB_DNS/health
-
-# 8. Check ALB tags
-aws elbv2 describe-tags \
-    --resource-arns $(aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb --query "LoadBalancers[0].Arn" --output text)
-```
-
-**ALB Access Logs:**
-
-Access logs are automatically enabled when `enable_access_logs = true` in the ALB Terragrunt configuration. The module automatically creates the required S3 bucket policy with the following permissions:
-
-1. **ALBWriteAccess** - Allows ALB to write access logs to the specified S3 prefix
-2. **LogDeliveryWrite** - Allows AWS log delivery service to write objects with proper ACL
-3. **LogDeliveryRead** - Allows AWS log delivery service to read bucket ACL
-
-**S3 Bucket Policy (Auto-Generated):**
-
-```json
-{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "ALBWriteAccess",
-			"Effect": "Allow",
-			"Principal": { "AWS": "arn:aws:iam::<ACCOUNT_ID>:root" },
-			"Action": "s3:PutObject",
-			"Resource": "arn:aws:s3:::<BUCKET_NAME>/<PREFIX>/AWSLogs/<ACCOUNT_ID>/*"
-		},
-		{
-			"Sid": "LogDeliveryWrite",
-			"Effect": "Allow",
-			"Principal": { "Service": "delivery.logs.amazonaws.com" },
-			"Action": "s3:PutObject",
-			"Resource": "arn:aws:s3:::<BUCKET_NAME>/<PREFIX>/AWSLogs/<ACCOUNT_ID>/*",
-			"Condition": {
-				"StringEquals": { "s3:x-amz-acl": "bucket-owner-full-control" }
-			}
-		},
-		{
-			"Sid": "LogDeliveryRead",
-			"Effect": "Allow",
-			"Principal": { "Service": "delivery.logs.amazonaws.com" },
-			"Action": "s3:GetBucketAcl",
-			"Resource": "arn:aws:s3:::<BUCKET_NAME>"
-		}
-	]
-}
-```
-
-**Required S3 Bucket Permissions:**
-| Action | Principal | Resource | Purpose |
-| :--- | :--- | :--- | :--- |
-| `s3:PutObject` | ALB Service Role | `<bucket>/<prefix>/AWSLogs/<account>/*` | ALB writes access logs |
-| `s3:PutObject` | `delivery.logs.amazonaws.com` | `<bucket>/<prefix>/AWSLogs/<account>/*` | Log delivery writes with ACL |
-| `s3:GetBucketAcl` | `delivery.logs.amazonaws.com` | `<bucket>` | Log delivery reads bucket ACL |
-
-**Verify Access Logs:**
-
-```bash
-# Check if access logs are enabled
-aws elbv2 describe-load-balancer-attributes \
-    --load-balancer-arn $(aws elbv2 describe-load-balancers \
-        --names finishline-infra-app-dev-alb \
-        --query "LoadBalancers[0].LoadBalancerArn" --output text) \
-    --query "Attributes[?Key=='access_logs.s3.enabled']"
-
-# Check S3 bucket for access logs
-aws s3 ls s3://finishline-infra-app-e534d5ea/alb-access-logs/
-
-# Check S3 bucket policy
-aws s3api get-bucket-policy --bucket finishline-infra-app-e534d5ea --output text --query Policy
-```
-
-**ALB Security Group Rules Required:**
-| Direction | Protocol | Port | Source/Destination | Purpose |
-| :--- | :--- | :--- | :--- | :--- |
-| Inbound | TCP | 80 | 0.0.0.0/0 | HTTP traffic from internet |
-| Inbound | TCP | 443 | 0.0.0.0/0 | HTTPS traffic from internet |
-| Outbound | TCP | 80 | VPC CIDR | Health checks to targets |
-| Outbound | TCP | 443 | VPC CIDR | HTTPS to targets |
-| Outbound | TCP | 1024-65535 | 0.0.0.0/0 | Ephemeral return traffic |
-
 ---
 
 ### Step 2: Identity & Access (IAM, OIDC)
@@ -847,10 +550,7 @@ aws s3api get-bucket-policy --bucket finishline-infra-app-e534d5ea --output text
 
 Create the private/public key used for Jumphost access.
 
-```bash
-cd ../../security/key_pair
-terragrunt apply
-```
+
 
 **Key Pair Configuration:**
 | Configuration | Value | Description |
@@ -995,10 +695,7 @@ ssh-keygen -lf environments/dev/finishline-dev-key.pem
 
 IAM is the "Key Master" of AWS. These roles allow the EKS cluster and the Karpenter controller to create and manage EC2 resources on your behalf using the Principle of Least Privilege.
 
-```bash
-cd ../iam
-terragrunt apply
-```
+
 
 **IAM Role Inventory:**
 
@@ -1134,19 +831,15 @@ aws iam get-open-id-connect-provider --provider-arn arn:aws:iam::$(aws sts get-c
 
 ---
 
+---
+
 ### Step 3: Compute & Scaling (EKS, Karpenter)
 
 **Goal:** Launch the EKS cluster (The brain) and Karpenter (The brawn) to handle container workloads.
 
 #### 3.1 Deploy the EKS Cluster
 
-```bash
-# 1. Navigate to the EKS module
-cd ../../compute/eks
 
-# 2. Deploy the Cluster
-terragrunt apply
-```
 
 **EKS Cluster Configuration (Dev):**
 
@@ -1212,13 +905,7 @@ aws eks describe-nodegroup --cluster-name finishline-infra-app-dev-eks --region 
 
 #### 3.2 Deploy the Karpenter Autoscaler
 
-```bash
-# 1. Navigate to the Karpenter module
-cd ../karpenter
 
-# 2. Apply Karpenter
-terragrunt apply
-```
 
 **Karpenter Configuration (Dev):**
 
@@ -1331,6 +1018,78 @@ kubectl describe nodepool default
 ```
 
 ---
+
+---
+
+## Part 4: Automated Infrastructure Deployment (Dev, Stage, Prod)
+
+This project uses an automated orchestration script (`terraform/scripts/run-all.sh`) which resolves dependencies automatically across `dev`, `stage`, and `prod` modules. It relies on the decoupled Terragrunt architecture to sequentially provision:
+**IAM -> Key Pair -> VPC -> Security Groups -> ALB -> EKS -> IAM(OIDC) -> Karpenter -> Jumphost**
+
+### 4.1 Deploying an Environment
+
+The `run-all.sh` orchestration script ensures 100% feature parity between environments while applying the appropriate environment variables automatically based on the target execution environment.
+
+```bash
+# 1. Deploy Development (Default environment)
+./terraform/scripts/run-all.sh apply
+
+# 2. Plan Staging Changes (Pre-flight validation)
+./terraform/scripts/run-all.sh -e stage plan
+
+# 3. Apply Staging
+./terraform/scripts/run-all.sh -e stage apply
+
+# 4. Apply Production (Requires UAT Approval)
+./terraform/scripts/run-all.sh -e prod apply
+
+# Destroy All Environments (Reverse dependency order handled automatically)
+./terraform/scripts/run-all.sh --all destroy
+```
+
+### Environment-Specific Configurations
+
+| Configuration                 | Dev                                                     | Stage                                                   | Prod                                                    |
+| :---------------------------- | :------------------------------------------------------ | :------------------------------------------------------ | :------------------------------------------------------ |
+| **EKS Version**               | 1.31                                                    | 1.31                                                    | 1.31                                                    |
+| **Endpoint Public Access**    | ✅ Enabled                                              | ❌ Disabled                                             | ❌ Disabled                                             |
+| **Endpoint Private Access**   | ✅ Enabled                                              | ✅ Enabled                                              | ✅ Enabled                                              |
+| **Node Group Size**           | 2 nodes                                                 | 3 nodes                                                 | 3 nodes                                                 |
+| **Node Disk Size**            | 50GB                                                    | 100GB                                                   | 100GB                                                   |
+| **Node Instance Type**        | t3.medium                                               | t3.medium                                               | t3.medium                                               |
+| **Capacity Type**             | ON_DEMAND                                               | ON_DEMAND                                               | ON_DEMAND                                               |
+| **AMI Type**                  | BOTTLEROCKET_x86_64                                     | Bottlerocket                                            | Bottlerocket                                            |
+| **Authentication Mode**       | API                                                     | API                                                     | API                                                     |
+| **Cluster Logging**           | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler |
+| **Karpenter Max CPU**         | 50 cores                                                | -                                                       | -                                                       |
+| **Karpenter Instance Types**  | m5.large, m5.xlarge, c5.large                           | -                                                       | -                                                       |
+| **Karpenter Capacity Types**  | spot, on-demand                                         | -                                                       | -                                                       |
+| **Karpenter AMI Family**      | Bottlerocket                                            | Disabled                                                | Disabled                                                |
+| **Karpenter Volume Size**     | 50Gi                                                    | -                                                       | -                                                       |
+| **Jumphost Instance Type**    | t3.micro                                                | t3.micro                                                | t3.micro                                                |
+| **Jumphost Root Volume**      | 30GB gp3                                                | 30GB gp3                                                | 30GB gp3                                                |
+| **VPC CIDR**                  | 10.0.0.0/16                                             | 10.1.0.0/16                                             | 10.2.0.0/16                                             |
+| **Availability Zones**        | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      |
+| **ALB Health Check Path**     | /health                                                 | /health                                                 | /health                                                 |
+| **ALB Health Check Interval** | 5 seconds                                               | 5 seconds                                               | 5 seconds                                               |
+
+> [!NOTE]
+> **Unified Modular Architecture:** All environments (Dev, Stage, and Prod) follow a standardized modular Terragrunt structure with separate `terragrunt.hcl` files for each module (networking, security, compute). This ensures total consistency and allows for a true "Build Once, Promote Everywhere" DevSecOps workflow.
+
+> [!IMPORTANT]
+> **Production Hardening Requirements:**
+>
+> - **Endpoint Access**: Public access must be disabled (`endpoint_public_access = false`)
+> - **Private Access Only**: All kubectl traffic must route through the Jumphost
+> - **Karpenter Disabled**: Production uses static node groups for predictable capacity
+> - **Larger Disk**: 100GB vs 50GB in dev for production workloads
+> - **More Nodes**: 3 nodes minimum for high availability vs 2 in dev
+
+---
+
+---
+
+## Part 5: Post-Deployment Verification
 
 ### Step 4: Dev Verification Scripts
 
@@ -1696,105 +1455,6 @@ echo "=== Health Check Complete ==="
 ```
 
 ---
-
-## Part 4: Phase 2 - Environment Promotion (Stage & Prod)
-
-Once the `dev` environment is verified, we promote the infrastructure to **Stage** (Pre-production) and then **Production**.
-
-### Step 5: Migrating to Stage (10.1.x.x)
-
-**Goal:** Standardize the infrastructure in a pre-production environment.
-
-#### 5.1 Environment Variable Management
-
-To promote `dev` to `stage`, we use the `TG_ENV` variable. This ensures that the same Terraform logic is applied but with environment-specific inputs (like different CIDRs and tags).
-
-**Master Environment CIDR Mapping:**
-| Environment | VPC CIDR | Subnet Prefix(es) | AWS Region |
-| :--- | :--- | :--- | :--- |
-| **Development** | `10.0.0.0/16` | `10.0.1.0/24` to `10.0.12.0/24` | us-east-1 |
-| **Staging** | `10.1.0.0/16` | `10.1.1.0/24` to `10.1.12.0/24` | us-east-1 |
-| **Production** | `10.2.0.0/16` | `10.2.1.0/24` to `10.2.12.0/24` | us-east-1 |
-
-#### 5.2 Deploy Stage
-
-```bash
-# 1. Navigate to the stage environment
-cd terraform/environments/stage
-
-# 2. Deploy all modules in order
-#    Networking -> Security -> Compute
-terragrunt run-all apply
-```
-
----
-
-### Step 6: Launching Production (10.2.x.x)
-
-**Goal:** Deployment to the mission-critical environment.
-
-#### 6.1 UAT Approval & Pre-Launch
-
-Ensure all manual tests in Step 4/5 have passed.
-
-#### 6.2 Deploy Production
-
-```bash
-# 1. Navigate to the prod environment
-cd ../prod
-
-# 2. Deploy everything
-terragrunt run-all apply
-```
-
-> [!CAUTION]
-> **Production Hardening (Step 6.3):**
-> For Production environments, you **must** update your `terragrunt.hcl` for the `compute/eks` module to disable public API access:
->
-> ```hcl
-> cluster_endpoint_public_access  = false
-> cluster_endpoint_private_access = true
-> ```
->
-> This forces all `kubectl` traffic through the Jumphost, drastically reducing the cluster's attack surface.
-
-### Environment-Specific Configurations
-
-| Configuration                 | Dev                                                     | Stage                                                   | Prod                                                    |
-| :---------------------------- | :------------------------------------------------------ | :------------------------------------------------------ | :------------------------------------------------------ |
-| **EKS Version**               | 1.31                                                    | 1.31                                                    | 1.31                                                    |
-| **Endpoint Public Access**    | ✅ Enabled                                              | ❌ Disabled                                             | ❌ Disabled                                             |
-| **Endpoint Private Access**   | ✅ Enabled                                              | ✅ Enabled                                              | ✅ Enabled                                              |
-| **Node Group Size**           | 2 nodes                                                 | 3 nodes                                                 | 3 nodes                                                 |
-| **Node Disk Size**            | 50GB                                                    | 100GB                                                   | 100GB                                                   |
-| **Node Instance Type**        | t3.medium                                               | t3.medium                                               | t3.medium                                               |
-| **Capacity Type**             | ON_DEMAND                                               | ON_DEMAND                                               | ON_DEMAND                                               |
-| **AMI Type**                  | BOTTLEROCKET_x86_64                                     | Bottlerocket                                            | Bottlerocket                                            |
-| **Authentication Mode**       | API                                                     | API                                                     | API                                                     |
-| **Cluster Logging**           | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler | api, audit, authenticator, controllerManager, scheduler |
-| **Karpenter Max CPU**         | 50 cores                                                | -                                                       | -                                                       |
-| **Karpenter Instance Types**  | m5.large, m5.xlarge, c5.large                           | -                                                       | -                                                       |
-| **Karpenter Capacity Types**  | spot, on-demand                                         | -                                                       | -                                                       |
-| **Karpenter AMI Family**      | Bottlerocket                                            | Disabled                                                | Disabled                                                |
-| **Karpenter Volume Size**     | 50Gi                                                    | -                                                       | -                                                       |
-| **Jumphost Instance Type**    | t3.micro                                                | t3.micro                                                | t3.micro                                                |
-| **Jumphost Root Volume**      | 30GB gp3                                                | 30GB gp3                                                | 30GB gp3                                                |
-| **VPC CIDR**                  | 10.0.0.0/16                                             | 10.1.0.0/16                                             | 10.2.0.0/16                                             |
-| **Availability Zones**        | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      | us-east-1a, us-east-1b, us-east-1c                      |
-| **ALB Health Check Path**     | /health                                                 | /health                                                 | /health                                                 |
-| **ALB Health Check Interval** | 5 seconds                                               | 5 seconds                                               | 5 seconds                                               |
-
-> [!NOTE]
-> **Unified Modular Architecture:** All environments (Dev, Stage, and Prod) follow a standardized modular Terragrunt structure with separate `terragrunt.hcl` files for each module (networking, security, compute). This ensures total consistency and allows for a true "Build Once, Promote Everywhere" DevSecOps workflow.
-
-> [!IMPORTANT]
-> **Production Hardening Requirements:**
->
-> - **Endpoint Access**: Public access must be disabled (`endpoint_public_access = false`)
-> - **Private Access Only**: All kubectl traffic must route through the Jumphost
-> - **Karpenter Disabled**: Production uses static node groups for predictable capacity
-> - **Larger Disk**: 100GB vs 50GB in dev for production workloads
-> - **More Nodes**: 3 nodes minimum for high availability vs 2 in dev
 
 ---
 

@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/RUNBOOK.md",
+                "file": "docs/TROUBLESHOOTING.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": true,
@@ -28,7 +28,7 @@
                 }
               },
               "icon": "lucide-file",
-              "title": "RUNBOOK"
+              "title": "TROUBLESHOOTING"
             }
           }
         ]
@@ -205,17 +205,18 @@
   },
   "active": "e1d0659ce3c622ed",
   "lastOpenFiles": [
+    "docs/RUNBOOK.md",
+    "append_audit_log.py",
+    "merge_docs.py",
+    "docs/RUNBOOK_NEW.md",
+    "tmp_rewrite.py",
+    "terraform/modules/security/iam/data.tf",
     "terraform/modules/networking/alb/storage.tf",
     "terraform/modules/storage/s3_bucket_policy/variables.tf",
     "terraform/modules/storage/s3_bucket_policy/main.tf",
     "terraform/modules/storage/s3_bucket_policy",
     "terraform/modules/storage",
     "docs/scripts/finishline_infra.sh",
-    "terraform/tree.txt",
-    "terraform/environments/staging/networking/sg/terragrunt.hcl",
-    "terraform/environments/staging/compute/karpenter/terragrunt.hcl",
-    "terraform/environments/staging/networking/vpc/terragrunt.hcl",
-    "terraform/environments/staging/networking/alb/terragrunt.hcl",
     "terraform/modules/security/key_pair/README.md",
     "terraform/modules/security/iam/README.md",
     "terraform/modules/networking/sg/README.md",
@@ -232,7 +233,6 @@
     "docs/KARPENTER_MANIFESTS.md",
     "docs/KARPENTER_FIXES.md",
     "docs/NODEGROUP_STATE_FIX.md",
-    "docs/RUNBOOK.md",
     "docs/QUOTA_FIX_SUMMARY.md",
     "terraform/scripts/OIDC_THUMBPRINT_FIX.md",
     "docs/README.md",
