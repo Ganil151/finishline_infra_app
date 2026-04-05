@@ -11,24 +11,12 @@
             "id": "e1d0659ce3c622ed",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "pdf",
               "state": {
-                "file": "docs/TROUBLESHOOTING.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": true,
-                "backlinkOpts": {
-                  "collapseAll": false,
-                  "extraContext": false,
-                  "sortOrder": "alphabetical",
-                  "showSearch": false,
-                  "searchQuery": "",
-                  "backlinkCollapsed": false,
-                  "unlinkedCollapsed": true
-                }
+                "file": "docs/Finishline_Infra_Project_Assignment.pdf"
               },
-              "icon": "lucide-file",
-              "title": "TROUBLESHOOTING"
+              "icon": "lucide-file-text",
+              "title": "Finishline_Infra_Project_Assignment"
             }
           }
         ]
@@ -205,18 +193,21 @@
   },
   "active": "e1d0659ce3c622ed",
   "lastOpenFiles": [
+    "docs/Finishline_Karpenter_Project.pdf",
     "docs/RUNBOOK.md",
-    "append_audit_log.py",
-    "merge_docs.py",
+    "terraform/environments/dev/finishline-infra-app-dev-key.pem",
+    "terraform/environments/dev/versions.json",
+    "docs/TROUBLESHOOTING.md",
+    "terraform/modules/compute/jumphost/locals.tf",
+    "terraform/modules/compute/jumphost/data.tf",
+    "terraform/scripts/karpenter/karpenter-nodepool.yaml",
+    "terraform/scripts/karpenter/karpenter-crds-nodepool.yaml",
+    "terraform/scripts/karpenter/karpenter-ec2-node-class.yaml",
+    "terraform/scripts/karpenter/karpenter-nodeclaim.yaml",
+    "terraform/scripts/karpenter/karpenter-crds.yaml",
+    "terraform/scripts/karpenter",
+    "terraform/scripts/fixes/OIDC_THUMBPRINT_FIX.md",
     "docs/RUNBOOK_NEW.md",
-    "tmp_rewrite.py",
-    "terraform/modules/security/iam/data.tf",
-    "terraform/modules/networking/alb/storage.tf",
-    "terraform/modules/storage/s3_bucket_policy/variables.tf",
-    "terraform/modules/storage/s3_bucket_policy/main.tf",
-    "terraform/modules/storage/s3_bucket_policy",
-    "terraform/modules/storage",
-    "docs/scripts/finishline_infra.sh",
     "terraform/modules/security/key_pair/README.md",
     "terraform/modules/security/iam/README.md",
     "terraform/modules/networking/sg/README.md",
@@ -237,8 +228,6 @@
     "terraform/scripts/OIDC_THUMBPRINT_FIX.md",
     "docs/README.md",
     "terraform/README.md",
-    "docs/TROUBLESHOOTING.md",
-    "terraform/scripts/TROUBLESHOOTING.md",
-    "docs/AUDIT_LOG.md"
+    "terraform/scripts/TROUBLESHOOTING.md"
   ]
 }

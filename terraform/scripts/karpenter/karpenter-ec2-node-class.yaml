@@ -1,0 +1,29 @@
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+  labels:
+    karpenter.sh/discovery: "${cluster_name}"
+spec:
+  amiFamily: ${karpenter_ami_family}
+  role: ${karpenter_node_role}
+  subnetSelectorTerms:
+    - tags:
+        ${join("\n        ", [for k, v in karpenter_subnet_tags : "${k}: ${v}"])}
+  securityGroupSelectorTerms:
+    - tags:
+        ${join("\n        ", [for k, v in karpenter_security_group_tags : "${k}: ${v}"])}
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: ${karpenter_volume_size}
+        volumeType: ${karpenter_volume_type}
+        encrypted: true
+        deleteOnTermination: true
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+  detailedMonitoring: ${karpenter_detailed_monitoring ? "true" : "false"}

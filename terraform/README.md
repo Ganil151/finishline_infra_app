@@ -232,12 +232,20 @@ cd environments/prod && terragrunt run-all apply
 
 ## State Management
 
-Terraform state is stored in S3 with DynamoDB locking:
+Terraform state is stored in S3 with DynamoDB locking (managed via Terragrunt):
 
-- **Bucket:** `finishline-infra-app-ba3347ce`
+- **Bucket:** `finishline-infra-app-e534d5ea`
 - **Region:** us-east-1
 - **Encryption:** Enabled
 - **Locking:** DynamoDB
+
+## Tagging Strategy & Perpetual Recreation Fix
+
+To prevent AWS resources (like Elastic IPs and NAT Gateways) from being recreated or showing perpetual diffs during `terragrunt plan/apply`, we use a strict tagging alignment:
+
+1. **Global Tags:** Managed in `root.hcl` via the AWS provider's `default_tags` block. These include `Project`, `Environment`, `ManagedBy`, and `Terraform`.
+2. **Resource Tags:** Individual modules only set the `Name` tag (and other resource-specific tags). 
+3. **The Fix:** We aligned the key casing between `default_tags` and `common_tags`. Crucially, `common_tags` passed from Terragrunt should be an empty map if the keys already exist in `default_tags` to avoid perpetual diffs.
 
 ## Verification
 
@@ -265,6 +273,8 @@ kubectl get nodepool
 
 | Issue | Resolution |
 |-------|------------|
+| EIPs/Resources recreating on every plan | Check for tag key casing mismatch between `default_tags` in `root.hcl` and `common_tags` in `terragrunt.hcl`. Align keys or use empty `common_tags`. |
+| `AsgInstanceLaunchFailures` (Quota) | You've reached your quota for `Fleet Requests` or specific instance types. Check `aws service-quotas` for "Standard On-Demand" limits. Default for some accounts may be as low as 1.0 (1 node max). |
 | CRD not found errors | See [Karpenter README](modules/compute/karpenter/README.md#troubleshooting) |
 | Namespace not found | Module sets `create_namespace = true` |
 | Helm provider errors | Ensure Helm provider >= 3.0 |

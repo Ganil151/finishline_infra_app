@@ -1086,9 +1086,6 @@ The `run-all.sh` orchestration script ensures 100% feature parity between enviro
 > - **More Nodes**: 3 nodes minimum for high availability vs 2 in dev
 
 ---
-
----
-
 ## Part 5: Post-Deployment Verification
 
 ### Step 4: Dev Verification Scripts
@@ -2037,6 +2034,7 @@ telnet <DB_ENDPOINT> 3306
 
 | Error                             | Cause                                                       | Fix                                                                           |
 | :-------------------------------- | :---------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `AsgInstanceLaunchFailures`       | AWS Account Quota hit (e.g., Fleet Requests or On-Demand limits) | Check `aws service-quotas` and manually recreate node group with fewer nodes |
 | `DryRunOperation`                 | IAM Policy lacks `ec2:Submit` or resource-level permissions | Update the EKS Node Role with higher permissions or check resource ARNs       |
 | `BucketNotEmpty`                  | S3 has hidden versions or delete markers                    | Follow the Manual Cleanup guide in Step 12 to delete all versions             |
 | `Namespace NotFound`              | Helm pod started before namespace creation                  | Run `kubectl create ns karpenter` manually before applying Karpenter          |
@@ -2100,7 +2098,7 @@ aws elbv2 describe-load-balancers \
 
 # 2. Delete the existing ALB (this also deletes attached listeners)
 aws elbv2 delete-load-balancer \
-    --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:365269738775:loadbalancer/app/finishline-infra-app-dev-alb/f2929479433f4d88
+    --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:xxxxxxxxxxxx:loadbalancer/app/finishline-infra-app-dev-alb/xxxxxxxxxxxxxxxx
 
 # 3. Wait for deletion to complete (ALBs take 2-5 minutes)
 # Check until you get "LoadBalancerNotFound"
@@ -2123,6 +2121,42 @@ aws elbv2 describe-load-balancers --names finishline-infra-app-dev-alb
 # 6. Re-run Terragrunt to create fresh ALB
 cd terraform/environments/dev/networking/alb
 terragrunt apply
+```
+
+**EKS Node Group Quota (`AsgInstanceLaunchFailures`) Resolution:**
+
+When the Node Group creation fails with: `You've reached your quota for maximum Fleet Requests for this account`, you must manually clean up and recreate the node group with a smaller size (e.g., 1 node) if your account limits are strictly restricted.
+
+**Recovery Steps:**
+
+1. **Delete the stuck Node Group:**
+```bash
+aws eks delete-nodegroup --cluster-name finishline-infra-app-dev-eks --nodegroup-name default-nodegroup --region us-east-1
+```
+
+2. **Wait for full deletion:**
+```bash
+aws eks wait nodegroup-deleted --cluster-name finishline-infra-app-dev-eks --nodegroup-name default-nodegroup --region us-east-1
+```
+
+3. **Recreate with 1 Node (On-Demand):**
+```powershell
+aws eks create-nodegroup `
+  --cluster-name finishline-infra-app-dev-eks `
+  --nodegroup-name default-nodegroup `
+  --node-role "arn:aws:iam::365269738775:role/finishline-infra-app-dev-eks-nodegroup-role" `
+  --subnets <SUBNET_IDS> `
+  --instance-types t3.medium `
+  --ami-type BOTTLEROCKET_x86_64 `
+  --capacity-type ON_DEMAND `
+  --scaling-config minSize=1,maxSize=1,desiredSize=1 `
+  --region us-east-1
+```
+
+4. **Import to Terragrunt:**
+```bash
+cd terraform/environments/dev/compute/eks
+terragrunt import aws_eks_node_group.nodegroup[0] finishline-infra-app-dev-eks:default-nodegroup
 ```
 
 **Option 2: Import Existing ALB into Terraform State**
@@ -2204,8 +2238,8 @@ terragrunt plan -out=tfplan
 # Import existing resource
 terragrunt import <resource_type>.<resource_name> <aws_resource_id>
 
-# Check AWS service quotas
-aws service-quotas list-service-quotas --service-code eks
+# Check AWS service quotas (CRITICAL for restricted accounts)
+aws service-quotas list-service-quotas --service-code ec2 --region us-east-1 --query "Quotas[?contains(QuotaName, 'On-Demand') && contains(QuotaName, 'Standard')].{Name:QuotaName,Usage:Usage,Value:Value}"
 
 # Check EC2 capacity
 aws ec2 describe-instance-type-offerings --region us-east-1
@@ -2216,6 +2250,14 @@ aws iam get-role --role-name <role-name> --query 'Role.AssumeRolePolicyDocument'
 # Check CloudWatch logs for EKS
 aws logs tail /aws/eks/<cluster-name>/cluster/api --follow
 ```
+
+## Environment-First Configuration Strategy
+
+As of Version 5.1, this project uses an **Environment-First Configuration** model to ensure maximum visibility and control:
+
+1. **Explicit Inputs:** All variable defaults have been removed from modular `variables.tf` files. This forces every environment (dev, stage, prod) to explicitly declare its parameters in `terragrunt.hcl`.
+2. **Quota Awareness:** For the `dev` environment, we have identified a **Standard On-Demand limit of 1.0**. This means the `node_group_max_size` and `node_group_desired_size` must both be set to `1` unless a quota increase is granted.
+3. **No-Drift Tagging:** Resource-level `tags` blocks in `terragrunt.hcl` are kept empty (`{}`) to allow the root `default_tags` to manage all metadata consistently, preventing perpetual reconstruction bugs.
 
 **Final Reminder:** Always check your project tags. Every resource MUST have `Project: finishline-infra-app` and the correct `Environment` tag for cost tracking.
 

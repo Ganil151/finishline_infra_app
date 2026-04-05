@@ -15,9 +15,9 @@ resource "aws_vpc" "finishline_vpc" {
   enable_dns_hostnames = var.enable_dns_hostnames
   instance_tenancy     = var.instance_tenancy
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-vpc"
-  })
+  }
 
 }
 #========================================================================
@@ -26,9 +26,9 @@ resource "aws_vpc" "finishline_vpc" {
 resource "aws_internet_gateway" "finishline_igw" {
   vpc_id = aws_vpc.finishline_vpc.id
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-igw"
-  })
+  }
 
 }
 #========================================================================
@@ -38,9 +38,9 @@ resource "aws_eip" "finishline_eip" {
   count  = length(var.public_subnets_cidr)
   domain = "vpc"
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-eip-${count.index + 1}"
-  })
+  }
 }
 #========================================================================
 #                  *** Public Subnet Configuration ***
@@ -53,7 +53,7 @@ resource "aws_subnet" "finishline_public_subnet" {
   availability_zone       = var.public_subnets_az[count.index]
   map_public_ip_on_launch = var.map_public_ip_on_launch
 
-  tags = merge(var.common_tags, {
+  tags = merge({
     Name = "${var.project_name}-${var.environment}-public-subnet-${count.index + 1}"
     Type = "public"
   }, local.karpenter_tags)
@@ -68,18 +68,18 @@ resource "aws_nat_gateway" "finishline_nat_gateway" {
   allocation_id     = aws_eip.finishline_eip[count.index].id
   availability_mode = "zonal"
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-nat-gateway-${count.index + 1}"
-  })
+  }
 
   depends_on = [aws_internet_gateway.finishline_igw]
 }
 #_______________________*** Public Route Table ***_________________________
 resource "aws_route_table" "finishline_public_route_table" {
   vpc_id = aws_vpc.finishline_vpc.id
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-public-rt"
-  })
+  }
 
 }
 #_______________________*** Public Route  ***______________________________
@@ -104,7 +104,7 @@ resource "aws_subnet" "finishline_private_subnet" {
   availability_zone       = var.private_subnets_az[count.index]
   map_public_ip_on_launch = var.map_private_ip_on_launch
 
-  tags = merge(var.common_tags, {
+  tags = merge({
     Name = "${var.project_name}-${var.environment}-private-subnet-${count.index + 1}"
     Type = "private"
   }, local.karpenter_tags)
@@ -113,9 +113,9 @@ resource "aws_subnet" "finishline_private_subnet" {
 resource "aws_route_table" "finishline_private_route_table" {
   count  = length(var.private_subnets_cidr)
   vpc_id = aws_vpc.finishline_vpc.id
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-private-rt-${count.index + 1}"
-  })
+  }
 
 }
 #_______________________*** Private NAT Routes ***_________________________
@@ -202,9 +202,9 @@ resource "aws_security_group" "finishline_vpc_endpoints_sg" {
     }
   }
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-vpc-endpoints-sg"
-  })
+  }
 
 }
 #___________________________*** EKS Endpoints *** ________________________
@@ -217,9 +217,9 @@ resource "aws_vpc_endpoint" "finishline_eks_endpoint" {
   subnet_ids          = [aws_subnet.finishline_private_subnet[0].id]
   private_dns_enabled = var.private_dns_enabled
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-eks-endpoint"
-  })
+  }
 }
 #__________________________*** STS Endpoints ***__________________________
 resource "aws_vpc_endpoint" "finishline_sts_endpoint" {
@@ -231,9 +231,9 @@ resource "aws_vpc_endpoint" "finishline_sts_endpoint" {
   subnet_ids          = [aws_subnet.finishline_private_subnet[0].id]
   private_dns_enabled = var.private_dns_enabled
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-sts-endpoint"
-  })
+  }
 }
 #_________________________*** EC2 Endpoints *** __________________________
 resource "aws_vpc_endpoint" "finishline_ec2_endpoint" {
@@ -245,9 +245,9 @@ resource "aws_vpc_endpoint" "finishline_ec2_endpoint" {
   subnet_ids          = [aws_subnet.finishline_private_subnet[0].id]
   private_dns_enabled = var.private_dns_enabled
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-ec2-endpoint"
-  })
+  }
 }
 #__________________________*** S3 Endpoints *** __________________________
 resource "aws_vpc_endpoint" "finishline_s3_endpoint" {
@@ -258,7 +258,7 @@ resource "aws_vpc_endpoint" "finishline_s3_endpoint" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = aws_route_table.finishline_private_route_table[*].id
 
-  tags = merge(var.common_tags, {
+  tags = {
     Name = "${var.project_name}-${var.environment}-s3-endpoint"
-  })
+  }
 }
